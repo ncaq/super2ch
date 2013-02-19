@@ -13,29 +13,31 @@
   }
 
   var conf = {
+    // maxAnchorExtent 以上の範囲アンカーは無視する
+    // >>1-1000 のようなアンカーが被参照ポップアップに現れなくなる
     maxAnchorExtent:    32,
     ignoredAnchorColor: '#666',
 
     color: {
-      num: [
-        '#00f',
-        '#808',
-        null,
-        '#f00'
-      ],
+      num: { // レス番ハイライト
+        0: '#00f',
+        1: '#808',
+        3: '#f00'
+      },
 
-      id: [
-        '#000',
-        null,
-        '#00f',
-        null,
-        null,
-        '#f00'
-      ]
+      id: { // IDハイライト
+        0: '#000',
+        2: '#00f',
+        5: '#f00'
+      }
     },
 
     popup: {
-      pinTime: 100
+      // ポップアップが固定されるまでの時間(ミリ秒)
+      // ポップアップを表示してから pinTime 以内にカーソルがアンカーから離れるとポップアップを消す
+      pinTime:     100,
+      // 一つのポップアップには maxResCount 個までしかレスを表示しない
+      maxResCount: 20
     },
 
     urls: [
@@ -494,10 +496,10 @@
               data.title = '\u5bfe\u8c61\u30ec\u30b9\u304c\u3042\u308a\u307e\u305b\u3093';
             }
 
-            if (data.items.length > _.conf.maxAnchorExtent) {
+            if (data.items.length > _.conf.popup.maxResCount) {
               data.title = data.title ? data.title + ' ' : '';
-              data.title += ' (' + _.conf.maxAnchorExtent + '/' + data.items.length + ')';
-              data.items = data.items.slice(0, _.conf.maxAnchorExtent);
+              data.title += ' (' + _.conf.popup.maxResCount + '/' + data.items.length + ')';
+              data.items = data.items.slice(0, _.conf.popup.maxResCount);
             }
 
             if (!root) {
