@@ -115,7 +115,8 @@
 
   _.re.delATagAnchor = [new RegExp('<[aA][^>]*>(' + _.re.bodyAnchor.source + ')<\\/[aA]>', 'g'), '$1'];
 
-  _.Response = function(number, numberAnchor, dt, dd) {
+  _.Response = function(thread, number, numberAnchor, dt, dd) {
+    this.thread = thread;
     this.number = number;
     this.numberAnchor = numberAnchor;
     this.dt = dt;
@@ -124,8 +125,11 @@
 
     this.resolveReferences();
 
+    this.numberAnchor.setAttribute('data-s2ch-thread-id', thread.id);
+
     this.idAnchor = this.dt.querySelector('*[data-s2ch-id]');
     if (this.idAnchor) {
+      this.idAnchor.setAttribute('data-s2ch-thread-id', thread.id);
       this.id = this.idAnchor.getAttribute('data-s2ch-id');
     }
   };
@@ -140,9 +144,11 @@
       this.numberReferences = [];
       this.idAnchors = [];
 
-      var added = {}, that = this;
+      var that = this, added = {};
 
       this.eachQuery('*[data-s2ch-num-ref]', function(elem) {
+        elem.setAttribute('data-s2ch-thread-id', that.thread.id);
+
         elem.getAttribute('data-s2ch-num-ref').split(',').forEach(function(num) {
           num = parseInt(num);
 
@@ -157,28 +163,41 @@
       });
 
       this.eachQuery('*[data-s2ch-id-ref]', function(elem) {
+        elem.setAttribute('data-s2ch-thread-id', that.thread.id);
         that.idAnchors.push(elem);
       });
 
       this.numberReferences.sort();
+    },
+
+    jump: function() {
+      var that         = this,
+          top          = this.dt.getBoundingClientRect().top,
+          bottom       = this.dd.getBoundingClientRect().bottom,
+          screenHeight = document.documentElement.clientHeight,
+          offset       = 0;
+
+      if (top < screenHeight * 0.2) {
+        offset = top - screenHeight * 0.2;
+      } else if (bottom > screenHeight * 0.8) {
+        offset = bottom - screenHeight * 0.8;
+      }
+
+      document.documentElement.scrollTop += offset;
+      document.body.scrollTop += offset;
     }
   };
 
-  _.Thread = function(dl, baseurl) {
-    this.dl = dl;
-    this.baseurl = baseurl;
-    this.baseurlEscaped = _.escapeHTML(this.baseurl);
+  _.Thread = function(dl) {
+    this.id = ++_.Thread.idSeed || (_.Thread.idSeed = 1);
+    (_.Thread.idMap || (_.Thread.idMap = {}))[this.id] = this;
 
+    this.dl = dl;
     this.dl.classList.add('s2ch-thread');
 
     this.modifyHTML();
     this.setupItems();
     this.resolveReferences();
-
-    var that = this;
-    this.dl.addEventListener('mouseover', function(ev) {
-      that.onMouseOver(ev);
-    });
   };
 
   _.Thread.prototype = {
@@ -227,7 +246,7 @@
             style = '" style="color:' + _.conf.ignoredAnchorColor;
           }
 
-          return '<a href="' + that.baseurlEscaped + _.toAscii(target) + style + '">' + all + '</a>';
+          return '<a href="' + _.toAscii(target) + style + '">' + all + '</a>';
         }
       );
 
@@ -249,8 +268,7 @@
       // 最初の数字アンカー化。先頭一致にしないのは、レス番に<a name="レス番">を仕込んでるところがあるから。
       html = html
         .replace(/(^|>)[\s\u3000]*(\d+)/, function(all, prefix, num) {
-          return prefix + '<a href="' + that.baseurlEscaped + num +
-            '" data-s2ch-num="' + num + '">' + num + '</a>';
+          return prefix + '<a href="' + num + '" data-s2ch-num="' + num + '">' + num + '</a>';
         })
         .replace(_.re.headerID[0], _.re.headerID[1]);
 
@@ -349,7 +367,7 @@
           return;
         }
 
-        var item = new _.Response(num, num_a, dt, dd);
+        var item = new _.Response(that, num, num_a, dt, dd);
         that.items.push(item);
         that.numberMap[num] = item;
         if (item.id) {
@@ -393,89 +411,16 @@
           elem.style.color = color;
         });
       });
-    },
-
-    onMouseOver: function(ev) {
-      var that = this, source = ev.target, root, run = false;
-
-      root = document.createElement('div');
-
-      while(source && source.hasAttribute) {
-        _.Thread.referenceFilter.forEach(function(filter) {
-          if (run) {
-            return;
-          }
-
-          filter.attrs.forEach(function(attr) {
-            if (run || !source.hasAttribute(attr)) {
-              return;
-            }
-
-            var data = filter.handler.call(that, source.getAttribute(attr), attr);
-            if (data && data.items) {
-              if (data.items.length > _.conf.maxAnchorExtent) {
-                data.title = data.title ? data.title + ' ' : '';
-                data.title += ' (' + _.conf.maxAnchorExtent + '/' + data.items.length + ')';
-                data.items = data.items.slice(0, _.conf.maxAnchorExtent);
-              }
-
-              if (data.title) {
-                var title = document.createElement('div');
-                title.className = 's2ch-popup-title';
-                title.textContent = data.title;
-                root.appendChild(title);
-              }
-
-              var dl = document.createElement('dl');
-              data.items.forEach(function(item) {
-                dl.appendChild(item.dt.cloneNode(true));
-                dl.appendChild(item.dd.cloneNode(true));
-              });
-              root.appendChild(dl);
-
-              // opera specific?
-              dl.addEventListener('mouseover', function(ev) {
-                that.onMouseOver(ev);
-              });
-
-              run = true;
-            }
-          });
-        });
-
-        if (run) {
-          break;
-        }
-
-        source = source.parentNode;
-      }
-
-      if (run) {
-        _.Popup.run(source, root);
-        return;
-      }
-
-      if (ev.target instanceof window.HTMLAnchorElement) {
-        var url = ev.target.textContent, dec = url;
-        try {
-          dec = decodeURIComponent(url);
-        } catch(ex) {}
-        if (url !== dec) {
-          var div = document.createElement('div');
-          div.textContent = dec;
-          _.Popup.run(ev.target, div, -1);
-        }
-      }
     }
   };
 
   _.Thread.referenceFilter = [
     {
       attrs: ['data-s2ch-num'],
-      handler: function(num) {
+      handler: function(thread, num) {
         num = parseInt(num);
 
-        var item = this.numberMap[num];
+        var item = thread.numberMap[num];
         if (!item || item.reverseReferences.length <= 0) {
           return null;
         }
@@ -488,11 +433,11 @@
 
     }, {
       attrs: ['data-s2ch-num-ref'],
-      handler: function(targets) {
-        var that = this, items = [];
+      handler: function(thread, targets) {
+        var items = [];
 
         targets.split(',').forEach(function(num) {
-          var item = that.numberMap[parseInt(num)];
+          var item = thread.numberMap[parseInt(num)];
           if (item) {
             items.push(item);
           }
@@ -505,8 +450,8 @@
 
     }, {
       attrs: ['data-s2ch-id', 'data-s2ch-id-ref'],
-      handler: function(id, attr) {
-        var items = this.idMap[id];
+      handler: function(thread, id, attr) {
+        var items = thread.idMap[id];
 
         if (!items) {
           return null;
@@ -523,6 +468,104 @@
       }
     }
   ];
+
+  _.Thread.onMouseOver = function(ev) {
+    var source = ev.target, root;
+
+    while(source && source.hasAttribute) {
+      _.Thread.referenceFilter.forEach(function(filter) {
+        if (root) {
+          return;
+        }
+
+        filter.attrs.forEach(function(attr) {
+          if (root || !source.hasAttribute(attr)) {
+            return;
+          }
+
+          var thread = _.Thread.idMap[parseInt(source.getAttribute('data-s2ch-thread-id'))];
+          if (!thread) {
+            return;
+          }
+
+          var data = filter.handler(thread, source.getAttribute(attr), attr);
+          if (data && data.items) {
+            if (data.items.length > _.conf.maxAnchorExtent) {
+              data.title = data.title ? data.title + ' ' : '';
+              data.title += ' (' + _.conf.maxAnchorExtent + '/' + data.items.length + ')';
+              data.items = data.items.slice(0, _.conf.maxAnchorExtent);
+            }
+
+            if (!root) {
+              root = document.createElement('div');
+            }
+
+            if (data.title) {
+              var title = document.createElement('div');
+              title.className = 's2ch-popup-title';
+              title.textContent = data.title;
+              root.appendChild(title);
+            }
+
+            var dl = document.createElement('dl');
+            data.items.forEach(function(item) {
+              dl.appendChild(item.dt.cloneNode(true));
+              dl.appendChild(item.dd.cloneNode(true));
+            });
+            root.appendChild(dl);
+          }
+        });
+      });
+
+      if (root) {
+        break;
+      }
+
+      source = source.parentNode;
+    }
+
+    if (root) {
+      _.Popup.run(source, root);
+      return;
+    }
+
+    if (ev.target instanceof window.HTMLAnchorElement) {
+      var url = ev.target.textContent, dec = url;
+      try {
+        dec = decodeURIComponent(url);
+      } catch(ex) {}
+      if (url !== dec) {
+        root = document.createElement('div');
+        root.textContent = dec;
+        _.Popup.run(ev.target, root, -1);
+      }
+    }
+  };
+
+  _.Thread.onClick = function(ev) {
+    if (ev.button !== 0 || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey) {
+      return;
+    }
+
+    var elem = ev.target;
+    while(elem && elem.hasAttribute) {
+      if (elem.hasAttribute('data-s2ch-num-ref')) {
+        var thread = _.Thread.idMap[parseInt(elem.getAttribute('data-s2ch-thread-id'))],
+            num    = parseInt(elem.getAttribute('data-s2ch-num-ref').split(',')[0]);
+        if (thread && thread.numberMap[num]) {
+          ev.preventDefault();
+          thread.numberMap[num].jump();
+        }
+        break;
+      }
+      elem = elem.parentNode;
+    }
+  };
+
+  _.Thread.init = function() {
+    window.addEventListener('mouseover', _.Thread.onMouseOver, false);
+    window.addEventListener('click', _.Thread.onClick, false);
+  };
 
   _.Popup = function(root, source) {
     this.source = source;
@@ -704,11 +747,15 @@
   };
 
   _.run = function() {
-    var baseurl = window.location.pathname.replace(/\/[^\/]*?$/, '/');
+    var time_s, time_e;
+
+    window.console.log('super2ch: start');
+
+    time_s = Date.now();
 
     _.threadList = [];
     Array.prototype.forEach.call(document.querySelectorAll('dl.thread'), function(dl) {
-      _.threadList.push(new _.Thread(dl, baseurl));
+      _.threadList.push(new _.Thread(dl));
     });
 
     if (_.threadList.length === 0) {
@@ -718,7 +765,7 @@
         return b[1] - a[1];
       })[0];
       if (dl) {
-        _.threadList.push(new _.Thread(dl[0], baseurl));
+        _.threadList.push(new _.Thread(dl[0]));
       }
     }
 
@@ -730,43 +777,11 @@
       document.body.appendChild(style);
     }
 
+    _.Thread.init();
     _.Popup.init();
-  };
 
-  _.lazyScroll = function(target, root, scroll) {
-    if (!target) {
-      return;
-    }
-
-    if (!root || !scroll) {
-      var p = target.parentNode;
-      while(p && p !== document.body && p !== document.documentElement) {
-        if (p.scrollHeight > p.offsetHeight) {
-          root = scroll = p;
-          break;
-        }
-        p = p.parentNode;
-      }
-    }
-
-    if (!root) {
-      root = document.compatMode === 'BackCompat' ? document.body : document.documentElement;
-    }
-
-    if (!scroll) {
-      _.lazyScroll(target, root, document.body);
-      scroll = document.documentElement;
-    }
-
-    var r_root   = root.getBoundingClientRect(),
-        r_target = target.getBoundingClientRect(),
-        bt       = Math.floor(Math.max(0, r_root.top) + root.clientHeight * 0.2),
-        bb       = Math.floor(Math.max(0, r_root.top) + root.clientHeight * 0.8);
-    if (r_target.top < bt) {
-      scroll.scrollTop -= bt - r_target.top;
-    } else if (r_target.bottom > bb) {
-      scroll.scrollTop += r_target.bottom - bb;
-    }
+    time_e = Date.now();
+    window.console.log('super2ch: done ' + ((time_e - time_s) / 1000) + 's');
   };
 
   _.toAscii = function(text) {
