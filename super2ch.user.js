@@ -457,7 +457,7 @@
           return null;
         }
 
-        if (attr === 'data-s2ch-id' && items.length < 2) {
+        if (attr === 'data-s2ch-id' && items.length <= 0) {
           return null;
         }
 
@@ -490,6 +490,10 @@
 
           var data = filter.handler(thread, source.getAttribute(attr), attr);
           if (data && data.items) {
+            if (data.items.length <= 0) {
+              data.title = '\u5bfe\u8c61\u30ec\u30b9\u304c\u3042\u308a\u307e\u305b\u3093';
+            }
+
             if (data.items.length > _.conf.maxAnchorExtent) {
               data.title = data.title ? data.title + ' ' : '';
               data.title += ' (' + _.conf.maxAnchorExtent + '/' + data.items.length + ')';
@@ -507,12 +511,15 @@
               root.appendChild(title);
             }
 
-            var dl = document.createElement('dl');
-            data.items.forEach(function(item) {
-              dl.appendChild(item.dt.cloneNode(true));
-              dl.appendChild(item.dd.cloneNode(true));
-            });
-            root.appendChild(dl);
+            if (data.items.length > 0) {
+              var dl = document.createElement('dl');
+              dl.classList.add('s2ch-thread');
+              data.items.forEach(function(item) {
+                dl.appendChild(item.dt.cloneNode(true));
+                dl.appendChild(item.dd.cloneNode(true));
+              });
+              root.appendChild(dl);
+            }
           }
         });
       });
@@ -805,10 +812,6 @@
   };
 
   _.css = [
-    'body.super2ch .s2ch-thread{',
-    '  font-family:"\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af" !important;',
-    '  font-size:16px !important;',
-    '}',
     'body.super2ch .s2ch-id{text-decoration:underline;cursor:pointer}',
     'body.super2ch .s2ch-popup{',
     '   position:absolute;',
@@ -823,8 +826,8 @@
     '   box-sizing:border-box;',
     '}',
     'body.super2ch .s2ch-popup-pinned{background-color:#ffffe0}',
-    'body.super2ch .s2ch-popup-title{margin-bottom:1em}',
     'body.super2ch .s2ch-popup dl{margin:0px;padding:0px}',
+    'body.super2ch .s2ch-popup .s2ch-popup-title + *{margin-top:1em}',
     'body.super2ch .s2ch-res-name{color:#804040}',
     'body.super2ch .s2ch-res-name>b{color:green}',
     'body.super2ch .s2ch-popup img{max-width:320px;max-height:240px}'
