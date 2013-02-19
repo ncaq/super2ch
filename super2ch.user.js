@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name        super2ch.js
+// @name        super2ch
 // @version     3.0
 // @author      wowo
 // @license     The MIT License
