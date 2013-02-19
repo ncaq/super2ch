@@ -56,9 +56,6 @@
       }, { // yy過去ログ
         url: /\/yy\d*\.(?:\d+\.kg|kakiko\.com)\/.*\/kako\/(?:.*\/)?\d+\.html?/,
         run: true
-      }, { // みみずん
-        url: /\/mimizun\.com\/(?:2chlog|machi\/log)\//,
-        run: true
       }, { // まちBBS旧URL?
         url: /\.machi\.to\/bbs\/read\.pl\?/,
         run: true
@@ -826,6 +823,7 @@
     '   max-height:100%;',
     '   overflow:auto;',
     '   box-sizing:border-box;',
+    '   z-index:32767;',
     '}',
     'body.super2ch .s2ch-popup-pinned{background-color:#ffffe0}',
     'body.super2ch .s2ch-popup dl{margin:0px;padding:0px}',
