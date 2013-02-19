@@ -11,44 +11,71 @@
     return;
   }
 
-  var urls = [
-    { // 汎用
-      url: /\/(?:test|bbs)\/read\.(?:cgi|so|php)\//,
-      run: true
-    }, { // URIエンコード汎用 / 魚拓とか
-      url: /%2F(?:test|bbs)%2Fread\.(?:cgi|so|php)%2F/,
-      run: true
-    }, { // 2ch過去ログ
-      url: /\.2ch\.net\/.*\/kako\/(?:.*\/)?\d+\.html?/,
-      run: true
-    }, { // したらば過去ログ
-      url: /\/jbbs\.livedoor\.jp\/.*\/storage\/(?:.*\/)?\d+\.html?/,
-      run: true
-    }, { // yy過去ログ
-      url: /\/yy\d*\.(?:\d+\.kg|kakiko\.com)\/.*\/kako\/(?:.*\/)?\d+\.html?/,
-      run: true
-    }, { // みみずん
-      url: /\/mimizun\.com\/(?:2chlog|machi\/log)\//,
-      run: true
-    }, { // megabbs.com
-      url: /[\.\/]megabbs\.com\/cgi-bin\/readres\.cgi/,
-      run: true
-    }, { // まちBBS旧URL?
-      url: /\.machi\.to\/bbs\/read\.pl\?/,
-      run: true
-    }, { // 公式P2では実行しない
-      url: /[\/\.]p2\.2ch\.net\//,
-      run: false
-    }, { // rep2では実行しない
-      url: /\/rep2(?:ex(?:pack)?)?\//,
-      run: false
-    }
-  ];
+  var conf = {
+    maxAnchorExtent:    32,
+    ignoredAnchorColor: '#666',
+
+    color: {
+      num: [
+        '#00f',
+        '#808',
+        null,
+        '#f00'
+      ],
+
+      id: [
+        '#000',
+        null,
+        '#00f',
+        null,
+        null,
+        '#f00'
+      ]
+    },
+
+    popup: {
+      pinTime: 100
+    },
+
+    urls: [
+      { // 汎用
+        url: /\/(?:test|bbs)\/read\.(?:cgi|so|php)\//,
+        run: true
+      }, { // URIエンコード汎用 / 魚拓とか
+        url: /%2F(?:test|bbs)%2Fread\.(?:cgi|so|php)%2F/,
+        run: true
+      }, { // 2ch過去ログ
+        url: /\.2ch\.net\/.*\/kako\/(?:.*\/)?\d+\.html?/,
+        run: true
+      }, { // したらば過去ログ
+        url: /\/jbbs\.livedoor\.jp\/.*\/storage\/(?:.*\/)?\d+\.html?/,
+        run: true
+      }, { // yy過去ログ
+        url: /\/yy\d*\.(?:\d+\.kg|kakiko\.com)\/.*\/kako\/(?:.*\/)?\d+\.html?/,
+        run: true
+      }, { // みみずん
+        url: /\/mimizun\.com\/(?:2chlog|machi\/log)\//,
+        run: true
+      }, { // megabbs.com
+        url: /[\.\/]megabbs\.com\/cgi-bin\/readres\.cgi/,
+        run: true
+      }, { // まちBBS旧URL?
+        url: /\.machi\.to\/bbs\/read\.pl\?/,
+        run: true
+      }, { // 公式P2では実行しない
+        url: /[\/\.]p2\.2ch\.net\//,
+        run: false
+      }, { // rep2では実行しない
+        url: /\/rep2(?:ex(?:pack)?)?\//,
+        run: false
+      }
+    ]
+  };
 
   var run = false;
-  for(var i = 0; i < urls.length; ++i) {
-    if (urls[i].url.test(window.location.href)) {
-      run = urls[i].run;
+  for(var i = 0; i < conf.urls.length; ++i) {
+    if (conf.urls[i].url.test(window.location.href)) {
+      run = conf.urls[i].run;
       if (!run) {
         break;
       }
@@ -56,37 +83,12 @@
   }
 
   if (run) {
-    super2ch(window.super2ch = {});
+    super2ch({
+      conf: conf
+    });
   }
 
 })(function(_) {
-  _.color = {
-    num: [
-      '#00f',
-      '#808',
-      null,
-      '#f00'
-    ],
-
-    id: [
-      '#000',
-      null,
-      '#00f',
-      null,
-      null,
-      '#f00'
-    ]
-  };
-
-  _.conf = {
-    popup: {
-      pinTime: 100
-    },
-
-    maxAnchorExtent:    32,
-    ignoredAnchorColor: '#666'
-  };
-
   _.re = {
     anchorPrefix:   '(?:' + ['&gt;', '\uff1e', '\u226b'].join('|') + '){1,2}[\s\u3000]*',
     anchorSplitter: '[,\uff0c=\uff1d\s\u3000]{1,2}',
@@ -395,19 +397,19 @@
         var cnt, color;
 
         cnt = item.reverseReferences.length;
-        while(!(color = _.color.num[cnt--])) ;
+        while(!(color = _.conf.color.num[cnt--])) ;
         item.numberAnchor.style.color = color;
 
         if (item.id && that.idMap[item.id] && item.idAnchor) {
           cnt = that.idMap[item.id].length;
-          while(!(color = _.color.id[cnt--])) ;
+          while(!(color = _.conf.color.id[cnt--])) ;
           item.idAnchor.style.color = color;
         }
 
         item.idAnchors.forEach(function(elem) {
           var id = elem.getAttribute('data-s2ch-id-ref');
           cnt = that.idMap[item.id].length;
-          while(!(color = _.color.id[cnt--])) ;
+          while(!(color = _.conf.color.id[cnt--])) ;
           elem.style.color = color;
         });
       });
