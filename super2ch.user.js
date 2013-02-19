@@ -805,12 +805,6 @@
     });
   };
 
-  _.escapeHTML = function(text) {
-    return text.replace(/[<>\"\'&]/g, function(c) {
-      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;'}[c];
-    });
-  };
-
   _.css = [
     'body.super2ch .s2ch-id{text-decoration:underline;cursor:pointer}',
     'body.super2ch .s2ch-popup{',
