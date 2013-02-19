@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name        super2ch.js
-// @author      wowo
 // @version     3.0
+// @author      wowo
+// @license     The MIT License
 // @namespace   http://my.opera.com/crckyl/
 // @include     http://*
 // ==/UserScript==
@@ -56,9 +57,6 @@
       }, { // みみずん
         url: /\/mimizun\.com\/(?:2chlog|machi\/log)\//,
         run: true
-      }, { // megabbs.com
-        url: /[\.\/]megabbs\.com\/cgi-bin\/readres\.cgi/,
-        run: true
       }, { // まちBBS旧URL?
         url: /\.machi\.to\/bbs\/read\.pl\?/,
         run: true
@@ -107,12 +105,12 @@
 
   _.re.headerID = [
     new RegExp('(\\s)(ID:(' + _.re.id + ')|\\[ (' + _.re.id + ') \\])'),
-    '$1<span class="s2ch-id" data-s2ch-id="$3$4">$2</a>'
+    '$1<span class="s2ch-id" data-s2ch-id="$3$4">$2</span>'
   ];
 
   _.re.bodyID = [
     new RegExp('(^|\\W)(ID:(' + _.re.id + '))(?![\\w\\/\\.+])', 'g'),
-    '$1<span class="s2ch-id" data-s2ch-id-ref="$3">$2</a>'
+    '$1<span class="s2ch-id" data-s2ch-id-ref="$3">$2</span>'
   ];
 
   _.re.delATagAnchor = [new RegExp('<[aA][^>]*>(' + _.re.bodyAnchor.source + ')<\\/[aA]>', 'g'), '$1'];
@@ -206,7 +204,7 @@
     eachDtDd: function(cb) {
       Array.prototype.forEach.call(this.dl.getElementsByTagName('dt'), function(dt) {
         var dd = dt.nextElementSibling;
-        if (!/^dd$/i.test(dd.tagName)) {
+        if (!dd || !/^dd$/i.test(dd.tagName)) {
           return;
         }
         cb(dt, dd);
@@ -576,6 +574,7 @@
     this.root.appendChild(root);
 
     var that = this;
+
     this.root.addEventListener('mousewheel', function(ev) {
       if (that.root.scrollWidth > that.root.clientWidth) {
         var left  = that.root.scrollLeft === 0,
@@ -593,6 +592,13 @@
           ev.preventDefault();
           return;
         }
+      }
+    }, false);
+
+    this.root.addEventListener('mousedown', function(ev) {
+      if (ev.detail === 2) {
+        ev.preventDefault();
+        that.close();
       }
     }, false);
   };
