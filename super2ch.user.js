@@ -35,6 +35,7 @@
     popup: {
       // ポップアップが固定されるまでの時間(ミリ秒)
       // ポップアップを表示してから pinTime 以内にカーソルがアンカーから離れるとポップアップを消す
+      // 0 なら待たずに固定する
       pinTime:     100,
       // 一つのポップアップには maxResCount 個までしかレスを表示しない
       maxResCount: 20
@@ -48,13 +49,13 @@
         url: /%2F(?:test|bbs)%2Fread\.(?:cgi|so|php|pl|py)%2F/,
         run: true
       }, { // 2ch過去ログ
-        url: /\.2ch\.net\/.*\/kako\/(?:.*\/)?\d+\.html?/,
+        url: /\.2ch\.net\/.*\/kako\/(?:.*\/)?\d+\.htm/,
         run: true
       }, { // したらば過去ログ
-        url: /\/jbbs\.livedoor\.jp\/.*\/storage\/(?:.*\/)?\d+\.html?/,
+        url: /\/jbbs\.livedoor\.jp\/.*\/storage\/(?:.*\/)?\d+\.htm/,
         run: true
       }, { // yy過去ログ
-        url: /\/yy\d*\.(?:\d+\.kg|kakiko\.com)\/.*\/kako\/(?:.*\/)?\d+\.html?/,
+        url: /\/yy\d*\.(?:\d+\.kg|kakiko\.com)\/.*\/kako\/(?:.*\/)?\d+\.htm/,
         run: true
       }, { // まちBBS旧URL?
         url: /\.machi\.to\/bbs\/read\.pl\?/,
