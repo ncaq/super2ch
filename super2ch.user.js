@@ -306,28 +306,19 @@
         .replace(
             /<a(?=\s)[^>]*\shref=([\"\'])([^\1>]*)\1[^>]*>((?:ftp|sssp|h?t?tps?):\/\/([^<]*))<\/a>/ig,
           function(all, _quot, href, text, url) {
+            // ime.nu とか外す
             try {
               href = decodeURIComponent(href);
               url  = decodeURIComponent(url);
-            } catch(e) {}
-            return href.indexOf(url) == -1 ? all : text;
+            } catch(e) { }
+            return href.indexOf(url) < 0 ? all : text;
           }
         );
 
-      // タグとテキストを分離
-      // splitに渡す正規表現を()で囲むとスプリッタも配列に含まれる
       var terms = html.split(/(<[^>]*>)/);
       for(var i = 0; i < terms.length; i += 2) {
-        /* 保管庫系の板でスレッドURLのリンク先をサイト内の物に書き換えてる場合を
-         * 考慮して直前のタグがアンカーでない場合のみURLをリンク化
-         * terms[i]内にタグがないのは保証済みのため、誤爆する可能性があるとすれば
-         * <a href="http://a/">pre<small>http://b/</small>post</a>
-         * なんて事になってる場合だが、この場合は
-         * <a href="http://a/">pre</a><small><a href="http://b/">http://b/</a></small>post
-         * と展開されるはずなので、たぶん影響はあんまりない
-         */
-
-        if (i < 1 || !terms[i - 1].match(/<a\s/i)) {
+        if (i < 1 || !/<a\s/i.test(terms[i - 1])) {
+          // 自動リンク
           terms[i] = terms[i].replace(
               /(^|\W)(ftp|sssp|h?t?tps?)(:\/\/[a-z\d\.\-+_:\/&\?%#=~@;\(\)\$,!\']*)/ig,
             function(_dummy, prefix, scheme, url) {
@@ -818,6 +809,8 @@
     '   max-height:100%;',
     '   overflow:auto;',
     '   box-sizing:border-box;',
+    '   -moz-box-sizing:border-box;',
+    '   -webkit-box-sizing:border-box;',
     '   z-index:32767;',
     '}',
     'body.super2ch .s2ch-popup-pinned{background-color:#ffffe0}',
