@@ -40,10 +40,10 @@
 
     urls: [
       { // 汎用
-        url: /\/(?:test|bbs)\/read\.(?:cgi|so|php)\//,
+        url: /\/(?:test|bbs)\/read\.(?:cgi|so|php|pl|py)\//,
         run: true
-      }, { // URIエンコード汎用 / 魚拓とか
-        url: /%2F(?:test|bbs)%2Fread\.(?:cgi|so|php)%2F/,
+      }, { // URIエンコード汎用
+        url: /%2F(?:test|bbs)%2Fread\.(?:cgi|so|php|pl|py)%2F/,
         run: true
       }, { // 2ch過去ログ
         url: /\.2ch\.net\/.*\/kako\/(?:.*\/)?\d+\.html?/,
