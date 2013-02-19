@@ -1,0 +1,811 @@
+// ==UserScript==
+// @name        super2ch.js
+// @author      wowo
+// @version     3.0
+// @namespace   http://my.opera.com/crckyl/
+// @include     http://*
+// ==/UserScript==
+
+(function(super2ch) {
+  if (window !== window.top) {
+    return;
+  }
+
+  var urls = [
+    { // 汎用
+      url: /\/(?:test|bbs)\/read\.(?:cgi|so|php)\//,
+      run: true
+    }, { // URIエンコード汎用 / 魚拓とか
+      url: /%2F(?:test|bbs)%2Fread\.(?:cgi|so|php)%2F/,
+      run: true
+    }, { // 2ch過去ログ
+      url: /\.2ch\.net\/.*\/kako\/(?:.*\/)?\d+\.html?/,
+      run: true
+    }, { // したらば過去ログ
+      url: /\/jbbs\.livedoor\.jp\/.*\/storage\/(?:.*\/)?\d+\.html?/,
+      run: true
+    }, { // yy過去ログ
+      url: /\/yy\d*\.(?:\d+\.kg|kakiko\.com)\/.*\/kako\/(?:.*\/)?\d+\.html?/,
+      run: true
+    }, { // みみずん
+      url: /\/mimizun\.com\/(?:2chlog|machi\/log)\//,
+      run: true
+    }, { // megabbs.com
+      url: /[\.\/]megabbs\.com\/cgi-bin\/readres\.cgi/,
+      run: true
+    }, { // まちBBS旧URL?
+      url: /\.machi\.to\/bbs\/read\.pl\?/,
+      run: true
+    }, { // 公式P2では実行しない
+      url: /[\/\.]p2\.2ch\.net\//,
+      run: false
+    }, { // rep2では実行しない
+      url: /\/rep2(?:ex(?:pack)?)?\//,
+      run: false
+    }
+  ];
+
+  var run = false;
+  for(var i = 0; i < urls.length; ++i) {
+    if (urls[i].url.test(window.location.href)) {
+      run = urls[i].run;
+      if (!run) {
+        break;
+      }
+    }
+  }
+
+  if (run) {
+    super2ch(window.super2ch = {});
+  }
+
+})(function(_) {
+  _.color = {
+    num: [
+      '#00f',
+      '#808',
+      null,
+      '#f00'
+    ],
+
+    id: [
+      '#000',
+      null,
+      '#00f',
+      null,
+      null,
+      '#f00'
+    ]
+  };
+
+  _.conf = {
+    popup: {
+      pinTime: 100
+    },
+
+    maxAnchorExtent:    32,
+    ignoredAnchorColor: '#666'
+  };
+
+  _.re = {
+    anchorPrefix:   '(?:' + ['&gt;', '\uff1e', '\u226b'].join('|') + '){1,2}[\s\u3000]*',
+    anchorSplitter: '[,\uff0c=\uff1d\s\u3000]{1,2}',
+    id:             '(?:[a-zA-Z\\d\\/\\.\\+]{8})(?:_[a-zA-Z\\d\\/\\.\\+]{8}){0,2}[a-zA-Z\\d]?'
+  };
+
+  _.re.anchorBase = 
+    '[\\d\uff10-\uff19]+' +
+    '(?:-(?:' + _.re.anchorPrefix + ')?[\\d\uff10-\uff19]+)?' +
+    '(?:' + _.re.anchorSplitter + '(?:' + _.re.anchorPrefix + ')?[\\d\uff10-\uff19]+' +
+    '(?:-(?:' + _.re.anchorPrefix + ')?[\\d\uff10-\uff19]+)?)*';
+
+  _.re.nameAnchor = new RegExp('^(?:' + _.re.anchorPrefix + ')?' + _.re.anchorBase + '$');
+
+  _.re.bodyAnchor = new RegExp(_.re.anchorPrefix + _.re.anchorBase);
+
+  _.re.headerID = [
+    new RegExp('(\\s)(ID:(' + _.re.id + ')|\\[ (' + _.re.id + ') \\])'),
+    '$1<span class="s2ch-id" data-s2ch-id="$3$4">$2</a>'
+  ];
+
+  _.re.bodyID = [
+    new RegExp('(^|\\W)(ID:(' + _.re.id + '))(?![\\w\\/\\.+])', 'g'),
+    '$1<span class="s2ch-id" data-s2ch-id-ref="$3">$2</a>'
+  ];
+
+  _.re.delATagAnchor = [new RegExp('<[aA][^>]*>(' + _.re.bodyAnchor.source + ')<\\/[aA]>', 'g'), '$1'];
+
+  _.Response = function(number, numberAnchor, dt, dd) {
+    this.number = number;
+    this.numberAnchor = numberAnchor;
+    this.dt = dt;
+    this.dd = dd;
+    this.reverseReferences = [];
+
+    this.resolveReferences();
+
+    this.idAnchor = this.dt.querySelector('*[data-s2ch-id]');
+    if (this.idAnchor) {
+      this.id = this.idAnchor.getAttribute('data-s2ch-id');
+    }
+  };
+
+  _.Response.prototype = {
+    eachQuery: function(query, callback) {
+      Array.prototype.forEach.call(this.dt.querySelectorAll(query), callback);
+      Array.prototype.forEach.call(this.dd.querySelectorAll(query), callback);
+    },
+
+    resolveReferences: function() {
+      this.numberReferences = [];
+      this.idAnchors = [];
+
+      var added = {}, that = this;
+
+      this.eachQuery('*[data-s2ch-num-ref]', function(elem) {
+        elem.getAttribute('data-s2ch-num-ref').split(',').forEach(function(num) {
+          num = parseInt(num);
+
+          // 重複/未来/自己アンカー無視
+          if (added[num] || num >= that.number) {
+            return;
+          }
+
+          that.numberReferences.push(num);
+          added[num] = true;
+        });
+      });
+
+      this.eachQuery('*[data-s2ch-id-ref]', function(elem) {
+        that.idAnchors.push(elem);
+      });
+
+      this.numberReferences.sort();
+    }
+  };
+
+  _.Thread = function(dl, baseurl) {
+    this.dl = dl;
+    this.baseurl = baseurl;
+    this.baseurlEscaped = _.escapeHTML(this.baseurl);
+
+    this.dl.classList.add('s2ch-thread');
+
+    this.modifyHTML();
+    this.setupItems();
+    this.resolveReferences();
+
+    var that = this;
+    this.dl.addEventListener('mouseover', function(ev) {
+      that.onMouseOver(ev);
+    });
+  };
+
+  _.Thread.prototype = {
+    eachDtDd: function(cb) {
+      Array.prototype.forEach.call(this.dl.getElementsByTagName('dt'), function(dt) {
+        var dd = dt.nextElementSibling;
+        if (!/^dd$/i.test(dd.tagName)) {
+          return;
+        }
+        cb(dt, dd);
+      });
+    },
+
+    modifyHTML: function() {
+      var that = this, html = '';
+      this.eachDtDd(function(dt, dd) {
+        html += '<dt>' + that.modifyItemHeader(dt.innerHTML) + '</dt>' +
+          '<dd>' + that.modifyItemBody(dd.innerHTML) + '</dd>';
+      });
+      html = html.replace(/<script(?: [^>]*)?>[\s\S]*?<\/script>/ig, '');
+      this.dl.innerHTML = html;
+    },
+
+    parseAnchor: function(str) {
+      var that = this, html, targets = [];
+
+      html = str.replace(
+          /.*?(([\d\uff10-\uff19]+)(?:-([\d\uff10-\uff19]+))?)/g,
+        function(all, target, min, max) {
+          var style = '';
+
+          min = parseInt(_.toAscii(min));
+          max = max ? parseInt(_.toAscii(max)) : min;
+
+          if (max < min) {
+            var tmp = min;
+            min = max;
+            max = tmp;
+          }
+
+          if (max - min + 1 <= _.conf.maxAnchorExtent) {
+            for(var j = min; j <= max; ++j) {
+              targets.push(j);
+            }
+          } else {
+            style = '" style="color:' + _.conf.ignoredAnchorColor;
+          }
+
+          return '<a href="' + that.baseurlEscaped + _.toAscii(target) + style + '">' + all + '</a>';
+        }
+      );
+
+      targets.sort();
+      return '<span data-s2ch-num-ref="' + targets.reduce(function(a, b) {
+        if (a[a.length - 1] !== b) {
+          a.push(b);
+        }
+        return a;
+      }, []).join(',') + '">' + html + '</span>';
+    },
+
+    modifyItemHeader: function(html) {
+      var that = this;
+
+      // a,b以外のタグ削除
+      html = html.replace(/<(?!\/?(?:b|a)[ >])\/?[^>]*>/ig, '');
+
+      // 最初の数字アンカー化。先頭一致にしないのは、レス番に<a name="レス番">を仕込んでるところがあるから。
+      html = html
+        .replace(/(^|>)[\s\u3000]*(\d+)/, function(all, prefix, num) {
+          return prefix + '<a href="' + that.baseurlEscaped + num +
+            '" data-s2ch-num="' + num + '">' + num + '</a>';
+        })
+        .replace(_.re.headerID[0], _.re.headerID[1]);
+
+      // メール抽出 / メールアンカー削除
+      html = html.replace(/(<a[^>]+?href=([\"\']))[^\2]*\/mailto:/i, '$1mailto:');
+
+      var mail = '', mailfound = false;
+      html = html.replace(
+          /<a[^>]+?href=([\"\'])mailto:([^\1>]*)\1[^>]*>(.*?)<\/a>/i,
+        function(all, d, m, c) {
+          mailfound = true;
+          mail = m;
+          return c;
+        }
+      );
+
+      // 名前 / 最初の太字部分を抜いてるのはアンカー化用
+      html = html.replace(
+          /(<b>[\s\u3000]*)([^<]*?)([\s\u3000]*<\/b>(?:.*<\/b>)?)( *\[(.*?)\])?/i,
+        function(all, a, name, b, mc, m) {
+          name = name.replace(_.re.nameAnchor, that.parseAnchor);
+          return '<span class="s2ch-res-name">' + a + name + b + '</b></span>' +
+            (mailfound ? '[' + mail + ']' : (mc ? '[' + m + ']' : '[]'));
+        }
+      );
+
+      return html;
+    },
+
+    modifyItemBody: function(html) {
+      var that = this;
+
+      html = html
+        .replace(_.re.delATagAnchor[0], _.re.delATagAnchor[1])
+        .replace(
+            /<a(?=\s)[^>]*\shref=([\"\'])([^\1>]*)\1[^>]*>((?:ftp|sssp|h?t?tps?):\/\/([^<]*))<\/a>/ig,
+          function(all, _quot, href, text, url) {
+            try {
+              href = decodeURIComponent(href);
+              url  = decodeURIComponent(url);
+            } catch(e) {}
+            return href.indexOf(url) == -1 ? all : text;
+          }
+        );
+
+      // タグとテキストを分離
+      // splitに渡す正規表現を()で囲むとスプリッタも配列に含まれる
+      var terms = html.split(/(<[^>]*>)/);
+      for(var i = 0; i < terms.length; i += 2) {
+        /* 保管庫系の板でスレッドURLのリンク先をサイト内の物に書き換えてる場合を
+         * 考慮して直前のタグがアンカーでない場合のみURLをリンク化
+         * terms[i]内にタグがないのは保証済みのため、誤爆する可能性があるとすれば
+         * <a href="http://a/">pre<small>http://b/</small>post</a>
+         * なんて事になってる場合だが、この場合は
+         * <a href="http://a/">pre</a><small><a href="http://b/">http://b/</a></small>post
+         * と展開されるはずなので、たぶん影響はあんまりない
+         */
+
+        if (i < 1 || !terms[i - 1].match(/<a\s/i)) {
+          terms[i] = terms[i].replace(
+              /(^|\W)(ftp|sssp|h?t?tps?)(:\/\/[a-z\d\.\-+_:\/&\?%#=~@;\(\)\$,!\']*)/ig,
+            function(_dummy, prefix, scheme, url) {
+              var scheme_link = scheme;
+              if (/^(?:sssp|h?t?tps?)$/i.test(scheme)) {
+                scheme_link = 'http';
+              }
+              return prefix + '<a href="' + scheme_link + url + '">' + scheme + url + '</a>';
+            }
+          );
+        }
+
+        // アンカー
+        terms[i] = terms[i].replace(_.re.bodyAnchor, function(str) {
+          return that.parseAnchor(str);
+        });
+        // ID:
+        terms[i] = terms[i].replace(_.re.bodyID[0], _.re.bodyID[1]);
+      }
+
+      return terms.join('');
+    },
+
+    setupItems: function() {
+      var that = this;
+      this.items = [];
+      this.numberMap = {};
+      this.idMap = {};
+      this.eachDtDd(function(dt, dd) {
+        var num_a = dt.querySelector('a[data-s2ch-num]');
+        if (!num_a) {
+          return;
+        }
+
+        var num = parseInt(num_a.getAttribute('data-s2ch-num'));
+        if (that.numberMap[num]) {
+          return;
+        }
+
+        var item = new _.Response(num, num_a, dt, dd);
+        that.items.push(item);
+        that.numberMap[num] = item;
+        if (item.id) {
+          if (!that.idMap[item.id]) {
+            that.idMap[item.id] = [item];
+          } else {
+            that.idMap[item.id].push(item);
+          }
+        }
+      });
+    },
+
+    resolveReferences: function() {
+      var that = this;
+      this.items.forEach(function(item) {
+        item.numberReferences.forEach(function(ref) {
+          ref = that.numberMap[ref];
+          if (ref) {
+            ref.reverseReferences.push(item);
+          }
+        });
+      });
+
+      this.items.forEach(function(item) {
+        var cnt, color;
+
+        cnt = item.reverseReferences.length;
+        while(!(color = _.color.num[cnt--])) ;
+        item.numberAnchor.style.color = color;
+
+        if (item.id && that.idMap[item.id] && item.idAnchor) {
+          cnt = that.idMap[item.id].length;
+          while(!(color = _.color.id[cnt--])) ;
+          item.idAnchor.style.color = color;
+        }
+
+        item.idAnchors.forEach(function(elem) {
+          var id = elem.getAttribute('data-s2ch-id-ref');
+          cnt = that.idMap[item.id].length;
+          while(!(color = _.color.id[cnt--])) ;
+          elem.style.color = color;
+        });
+      });
+    },
+
+    onMouseOver: function(ev) {
+      var that = this, source = ev.target, root, run = false;
+
+      root = document.createElement('div');
+
+      while(source && source.hasAttribute) {
+        _.Thread.referenceFilter.forEach(function(filter) {
+          if (run) {
+            return;
+          }
+
+          filter.attrs.forEach(function(attr) {
+            if (run || !source.hasAttribute(attr)) {
+              return;
+            }
+
+            var data = filter.handler.call(that, source.getAttribute(attr), attr);
+            if (data && data.items) {
+              if (data.items.length > _.conf.maxAnchorExtent) {
+                data.title = data.title ? data.title + ' ' : '';
+                data.title += ' (' + _.conf.maxAnchorExtent + '/' + data.items.length + ')';
+                data.items = data.items.slice(0, _.conf.maxAnchorExtent);
+              }
+
+              if (data.title) {
+                var title = document.createElement('div');
+                title.className = 's2ch-popup-title';
+                title.textContent = data.title;
+                root.appendChild(title);
+              }
+
+              var dl = document.createElement('dl');
+              data.items.forEach(function(item) {
+                dl.appendChild(item.dt.cloneNode(true));
+                dl.appendChild(item.dd.cloneNode(true));
+              });
+              root.appendChild(dl);
+
+              // opera specific?
+              dl.addEventListener('mouseover', function(ev) {
+                that.onMouseOver(ev);
+              });
+
+              run = true;
+            }
+          });
+        });
+
+        if (run) {
+          break;
+        }
+
+        source = source.parentNode;
+      }
+
+      if (run) {
+        _.Popup.run(source, root);
+        return;
+      }
+
+      if (ev.target instanceof window.HTMLAnchorElement) {
+        var url = ev.target.textContent, dec = url;
+        try {
+          dec = decodeURIComponent(url);
+        } catch(ex) {}
+        if (url !== dec) {
+          var div = document.createElement('div');
+          div.textContent = dec;
+          _.Popup.run(ev.target, div, -1);
+        }
+      }
+    }
+  };
+
+  _.Thread.referenceFilter = [
+    {
+      attrs: ['data-s2ch-num'],
+      handler: function(num) {
+        num = parseInt(num);
+
+        var item = this.numberMap[num];
+        if (!item || item.reverseReferences.length <= 0) {
+          return null;
+        }
+
+        return {
+          items: item.reverseReferences,
+          title: '\u62bd\u51fa \u88ab\u53c2\u7167\u30ec\u30b9: ' + num
+        };
+      }
+
+    }, {
+      attrs: ['data-s2ch-num-ref'],
+      handler: function(targets) {
+        var that = this, items = [];
+
+        targets.split(',').forEach(function(num) {
+          var item = that.numberMap[parseInt(num)];
+          if (item) {
+            items.push(item);
+          }
+        });
+
+        return {
+          items: items
+        };
+      }
+
+    }, {
+      attrs: ['data-s2ch-id', 'data-s2ch-id-ref'],
+      handler: function(id, attr) {
+        var items = this.idMap[id];
+
+        if (!items) {
+          return null;
+        }
+
+        if (attr === 'data-s2ch-id' && items.length < 2) {
+          return null;
+        }
+
+        return {
+          items: items,
+          title: '\u62bd\u51fa ID:' + id
+        };
+      }
+    }
+  ];
+
+  _.Popup = function(root, source) {
+    this.source = source;
+    this.root = document.createElement('div');
+    this.root.className = 's2ch-popup';
+    this.root.appendChild(root);
+
+    var that = this;
+    this.root.addEventListener('mousewheel', function(ev) {
+      if (that.root.scrollWidth > that.root.clientWidth) {
+        var left  = that.root.scrollLeft === 0,
+            right = that.root.scrollLeft + that.root.clientWidth >= that.root.scrollWidth;
+        if ((ev.wheelDeltaX > 0 && left) || (ev.wheelDeltaX < 0 && right)) {
+          ev.preventDefault();
+          return;
+        }
+      }
+
+      if (that.root.scrollHeight > that.root.clientHeight) {
+        var top    = that.root.scrollTop === 0,
+            bottom = that.root.scrollTop + that.root.clientHeight >= that.root.scrollHeight;
+        if ((ev.wheelDeltaY > 0 && top) || (ev.wheelDeltaY < 0 && bottom)) {
+          ev.preventDefault();
+          return;
+        }
+      }
+    }, false);
+  };
+
+  _.Popup.prototype = {
+    show: function(pinTime) {
+      var that = this;
+
+      document.body.appendChild(this.root);
+      this.adjustLocation();
+
+      if (pinTime === 0) {
+        this.pin();
+      } else if (pinTime > 0) {
+        window.setTimeout(function() {
+          that.pin();
+        }, pinTime);
+      }
+    },
+
+    pin: function() {
+      this.pinned = true;
+      this.root.classList.add('s2ch-popup-pinned');
+    },
+
+    adjustLocation: function() {
+      var screen     = document.documentElement,
+          screenRect = screen.getBoundingClientRect(),
+          sourceRect = this.source.getBoundingClientRect(),
+          width      = this.root.offsetWidth,
+          height     = this.root.offsetHeight,
+          left,
+          top;
+
+      if (height <= sourceRect.top) {
+        left = sourceRect.left;
+        top  = sourceRect.top - height;
+
+      } else if (width <= screen.clientWidth - sourceRect.right) {
+        left = sourceRect.right;
+        top  = sourceRect.bottom - height;
+
+      } else if (width <= sourceRect.left) {
+        left = sourceRect.left - width;
+        top  = sourceRect.bottom - height;
+
+      } else if (height <= screen.clientHeight - sourceRect.bottom) {
+        left = sourceRect.left;
+        top  = sourceRect.bottom;
+      } else {
+        left = screen.clientWidth - width;
+        top  = 0;
+      }
+
+      left = Math.max(0, Math.min(left, screen.clientWidth  - width));
+      top  = Math.max(0, Math.min(top,  screen.clientHeight - height));
+
+      this.root.style.left = (left - screenRect.left) + 'px';
+      this.root.style.top  = (top  - screenRect.top)  + 'px';
+    },
+
+    setParent: function(parent) {
+      this.parent = parent;
+    },
+
+    addChild: function(popup) {
+      if (this.child) {
+        this.child.close();
+      }
+      this.child = popup;
+      popup.setParent(this);
+    },
+
+    removeChild: function(popup) {
+      if (popup === this.child) {
+        delete(this.child);
+      }
+    },
+
+    close: function() {
+      if (this.child) {
+        this.child.close();
+      }
+      this.root.parentNode.removeChild(this.root);
+      if (this === _.Popup.leaf) {
+        _.Popup.leaf = this.parent;
+      }
+      if (this.parent) {
+        this.parent.removeChild(this);
+      }
+    },
+
+    checkClose: function(pos, prev) {
+      var popupRect  = this.root.getBoundingClientRect(),
+          sourceRect = this.source.getBoundingClientRect();
+
+      if (pos.x >= sourceRect.left && pos.x <= sourceRect.right &&
+          pos.y >= sourceRect.top  && pos.y <= sourceRect.bottom) {
+        return;
+      }
+
+      if (!this.pinned ||
+          (pos.x < popupRect.left   && pos.x < prev.x) ||
+          (pos.x > popupRect.right  && pos.x > prev.x) ||
+          (pos.y < popupRect.top    && pos.y < prev.y) ||
+          (pos.y > popupRect.bottom && pos.y > prev.y)) {
+        this.close();
+        if (this.parent) {
+          this.parent.checkClose(pos, prev);
+        }
+        return;
+      }
+    }
+  };
+
+  _.Popup.run = function(source, root, pinTime) {
+    var popupRoot = source;
+    while((popupRoot = popupRoot.parentNode) && popupRoot.classList) {
+      if (popupRoot.classList.contains('s2ch-popup')) {
+        break;
+      }
+    }
+
+    if (popupRoot) {
+      while(_.Popup.leaf && _.Popup.leaf.root !== popupRoot) {
+        _.Popup.leaf.close();
+      }
+    }
+
+    var popup = new _.Popup(root, source);
+    popup.show(pinTime || _.conf.popup.pinTime);
+    if (_.Popup.leaf) {
+      _.Popup.leaf.addChild(popup);
+    }
+    _.Popup.leaf = popup;
+    return popup;
+  };
+
+  _.Popup.onMouseMove = function(ev) {
+    var pos = {
+      x: ev.clientX,
+      y: ev.clientY
+    };
+
+    if (_.Popup.leaf && _.Popup.lastMousePos) {
+      _.Popup.leaf.checkClose(pos, _.Popup.lastMousePos);
+    }
+
+    _.Popup.lastMousePos = pos;
+  };
+
+  _.Popup.init = function() {
+    window.addEventListener('mousemove', _.Popup.onMouseMove, false);
+  };
+
+  _.run = function() {
+    var baseurl = window.location.pathname.replace(/\/[^\/]*?$/, '/');
+
+    _.threadList = [];
+    Array.prototype.forEach.call(document.querySelectorAll('dl.thread'), function(dl) {
+      _.threadList.push(new _.Thread(dl, baseurl));
+    });
+
+    if (_.threadList.length === 0) {
+      var dl = Array.prototype.map.call(document.getElementsByTagName('dl'), function(dl) {
+        return [dl, dl.offsetWidth * dl.offsetHeight];
+      }).sort(function(a, b) {
+        return b[1] - a[1];
+      })[0];
+      if (dl) {
+        _.threadList.push(new _.Thread(dl[0], baseurl));
+      }
+    }
+
+    if (_.threadList.length) {
+      document.body.classList.add('super2ch');
+
+      var style = document.createElement('style');
+      style.textContent = _.css;
+      document.body.appendChild(style);
+    }
+
+    _.Popup.init();
+  };
+
+  _.lazyScroll = function(target, root, scroll) {
+    if (!target) {
+      return;
+    }
+
+    if (!root || !scroll) {
+      var p = target.parentNode;
+      while(p && p !== document.body && p !== document.documentElement) {
+        if (p.scrollHeight > p.offsetHeight) {
+          root = scroll = p;
+          break;
+        }
+        p = p.parentNode;
+      }
+    }
+
+    if (!root) {
+      root = document.compatMode === 'BackCompat' ? document.body : document.documentElement;
+    }
+
+    if (!scroll) {
+      _.lazyScroll(target, root, document.body);
+      scroll = document.documentElement;
+    }
+
+    var r_root   = root.getBoundingClientRect(),
+        r_target = target.getBoundingClientRect(),
+        bt       = Math.floor(Math.max(0, r_root.top) + root.clientHeight * 0.2),
+        bb       = Math.floor(Math.max(0, r_root.top) + root.clientHeight * 0.8);
+    if (r_target.top < bt) {
+      scroll.scrollTop -= bt - r_target.top;
+    } else if (r_target.bottom > bb) {
+      scroll.scrollTop += r_target.bottom - bb;
+    }
+  };
+
+  _.toAscii = function(text) {
+    return text.replace(/[\uff10-\uff19]/g, function(chr) {
+      return String.fromCharCode(chr.charCodeAt(0) - 0xfee0);
+    });
+  };
+
+  _.escapeHTML = function(text) {
+    return text.replace(/[<>\"\'&]/g, function(c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;'}[c];
+    });
+  };
+
+  _.css = [
+    'body.super2ch .s2ch-thread{',
+    '  font-family:"\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af" !important;',
+    '  font-size:16px !important;',
+    '}',
+    'body.super2ch .s2ch-id{text-decoration:underline;cursor:pointer}',
+    'body.super2ch .s2ch-popup{',
+    '   position:absolute;',
+    '   border:outset 1px gray;',
+    '   padding:3px;',
+    '   background-color:#f0ffff;',
+    '   color:#000;',
+    '   font-size:smaller;',
+    '   max-width:100%;',
+    '   max-height:100%;',
+    '   overflow:auto;',
+    '   box-sizing:border-box;',
+    '}',
+    'body.super2ch .s2ch-popup-pinned{background-color:#ffffe0}',
+    'body.super2ch .s2ch-popup-title{margin-bottom:1em}',
+    'body.super2ch .s2ch-popup dl{margin:0px;padding:0px}',
+    'body.super2ch .s2ch-res-name{color:#804040}',
+    'body.super2ch .s2ch-res-name>b{color:green}',
+    'body.super2ch .s2ch-popup img{max-width:320px;max-height:240px}'
+  ].join('');
+
+  _.run();
+});
