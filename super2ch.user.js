@@ -188,9 +188,12 @@
     }
   };
 
-  _.Thread = function(dl) {
+  _.Thread = function(baseuri, dl) {
     this.id = ++_.Thread.idSeed || (_.Thread.idSeed = 1);
     (_.Thread.idMap || (_.Thread.idMap = {}))[this.id] = this;
+
+    this.baseuri = baseuri;
+    this.baseuriEscaped = _.escapeHTML(baseuri);
 
     this.dl = dl;
     this.dl.classList.add('s2ch-thread');
@@ -246,7 +249,7 @@
             style = '" style="color:' + _.conf.ignoredAnchorColor;
           }
 
-          return '<a href="' + _.toAscii(target) + style + '">' + all + '</a>';
+          return '<a href="' + that.baseuriEscaped + _.toAscii(target) + style + '">' + all + '</a>';
         }
       );
 
@@ -268,7 +271,8 @@
       // 最初の数字アンカー化。先頭一致にしないのは、レス番に<a name="レス番">を仕込んでるところがあるから。
       html = html
         .replace(/(^|>)[\s\u3000]*(\d+)/, function(all, prefix, num) {
-          return prefix + '<a href="' + num + '" data-s2ch-num="' + num + '">' + num + '</a>';
+          return prefix + '<a href="' + that.baseuriEscaped + num +
+            '" data-s2ch-num="' + num + '">' + num + '</a>';
         })
         .replace(_.re.headerID[0], _.re.headerID[1]);
 
@@ -320,8 +324,8 @@
         if (i < 1 || !/<a\s/i.test(terms[i - 1])) {
           // 自動リンク
           terms[i] = terms[i].replace(
-              /(^|\W)(ftp|sssp|h?t?tps?)(:\/\/[a-z\d\.\-+_:\/&\?%#=~@;\(\)\$,!\']*)/ig,
-            function(_dummy, prefix, scheme, url) {
+              /(^|\W)(ftp|sssp|h?t?tps?)(:\/\/(?:[a-z\d\.\-+_:\/\?%#=~@;\(\)\$,!\']|&amp;)*)/ig,
+            function(_all, prefix, scheme, url) {
               var scheme_link = scheme;
               if (/^(?:sssp|h?t?tps?)$/i.test(scheme)) {
                 scheme_link = 'http';
@@ -776,13 +780,15 @@
   _.run = function() {
     var time_s, time_e;
 
+    var baseuri = window.location.pathname.replace(/[^\/]+$/, '');
+
     window.console.log('super2ch: start');
 
     time_s = Date.now();
 
     _.threadList = [];
     Array.prototype.forEach.call(document.querySelectorAll('dl.thread'), function(dl) {
-      _.threadList.push(new _.Thread(dl));
+      _.threadList.push(new _.Thread(baseuri, dl));
     });
 
     if (_.threadList.length === 0) {
@@ -792,7 +798,7 @@
         return b[1] - a[1];
       })[0];
       if (dl) {
-        _.threadList.push(new _.Thread(dl[0]));
+        _.threadList.push(new _.Thread(baseuri, dl[0]));
       }
     }
 
@@ -811,11 +817,44 @@
     window.console.log('super2ch: done ' + ((time_e - time_s) / 1000) + 's');
   };
 
-  _.toAscii = function(text) {
-    return text.replace(/[\uff10-\uff19]/g, function(chr) {
-      return String.fromCharCode(chr.charCodeAt(0) - 0xfee0);
-    });
-  };
+  _.toAscii = (function() {
+    var re    = /[\uff10-\uff19]/g,
+        table = {
+          '\uff10': 0,
+          '\uff11': 1,
+          '\uff12': 2,
+          '\uff13': 3,
+          '\uff14': 4,
+          '\uff15': 5,
+          '\uff16': 6,
+          '\uff17': 7,
+          '\uff18': 8,
+          '\uff19': 9
+        };
+
+    return function(text) {
+      return text.replace(re, function(chr) {
+        return table[chr];
+      });
+    };
+  })();
+
+  _.escapeHTML = (function() {
+    var re    = /[&<>"']/g,
+        table = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        };
+
+    return function(text) {
+      return text.replace(re, function(chr) {
+        return table[chr];
+      });
+    };
+  })();
 
   _.css = [
     'body.super2ch .s2ch-id{text-decoration:underline;cursor:pointer}',
