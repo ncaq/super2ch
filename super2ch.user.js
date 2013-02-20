@@ -726,6 +726,14 @@
   };
 
   _.Popup.run = function(source, root, pinTime) {
+    var popup = _.Popup.leaf;
+    while(popup) {
+      if (source === popup.source) {
+        return null;
+      }
+      popup = popup.parent;
+    }
+
     var popupRoot = source;
     while((popupRoot = popupRoot.parentNode) && popupRoot.classList) {
       if (popupRoot.classList.contains('s2ch-popup')) {
@@ -739,7 +747,7 @@
       }
     }
 
-    var popup = new _.Popup(root, source);
+    popup = new _.Popup(root, source);
     popup.show(pinTime || _.conf.popup.pinTime);
     if (_.Popup.leaf) {
       _.Popup.leaf.addChild(popup);
