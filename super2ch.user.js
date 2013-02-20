@@ -623,19 +623,19 @@
     },
 
     adjustLocation: function() {
-      var screen     = document.documentElement,
-          screenRect = screen.getBoundingClientRect(),
-          sourceRect = this.source.getBoundingClientRect(),
-          width      = this.root.offsetWidth,
-          height     = this.root.offsetHeight,
-          left,
-          top;
+      var screen       = document.compatMode === 'BackCompat' ? document.body : document.documentElement,
+          screenWidth  = screen.clientWidth,
+          screenHeight = screen.clientHeight,
+          sourceRect   = this.source.getBoundingClientRect(),
+          width        = this.root.offsetWidth,
+          height       = this.root.offsetHeight,
+          left, top;
 
       if (height <= sourceRect.top) {
         left = sourceRect.left;
         top  = sourceRect.top - height;
 
-      } else if (width <= screen.clientWidth - sourceRect.right) {
+      } else if (width <= screenWidth - sourceRect.right) {
         left = sourceRect.right;
         top  = sourceRect.bottom - height;
 
@@ -643,19 +643,32 @@
         left = sourceRect.left - width;
         top  = sourceRect.bottom - height;
 
-      } else if (height <= screen.clientHeight - sourceRect.bottom) {
+      } else if (height <= screenHeight - sourceRect.bottom) {
         left = sourceRect.left;
         top  = sourceRect.bottom;
+
       } else {
-        left = screen.clientWidth - width;
+        left = screenWidth - width;
         top  = 0;
       }
 
       left = Math.max(0, Math.min(left, screen.clientWidth  - width));
       top  = Math.max(0, Math.min(top,  screen.clientHeight - height));
 
-      this.root.style.left = (left - screenRect.left) + 'px';
-      this.root.style.top  = (top  - screenRect.top)  + 'px';
+      if (left + width > screenWidth) {
+        this.root.style.width = (screenWidth - left) + 'px';
+      } else {
+        this.root.style.width = '';
+      }
+
+      if (top + height > screenHeight) {
+        this.root.style.height = (screenHeight - top) + 'px';
+      } else {
+        this.root.style.height = '';
+      }
+
+      this.root.style.left = (left + screen.scrollLeft) + 'px';
+      this.root.style.top  = (top  + screen.scrollTop)  + 'px';
     },
 
     setParent: function(parent) {
