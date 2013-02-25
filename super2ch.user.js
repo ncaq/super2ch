@@ -366,10 +366,10 @@
         that.items.push(item);
         that.numberMap[num] = item;
         if (item.id) {
-          if (!that.idMap[item.id]) {
-            that.idMap[item.id] = [item];
-          } else {
+          if (that.idMap[item.id]) {
             that.idMap[item.id].push(item);
+          } else {
+            that.idMap[item.id] = [item];
           }
         }
       });
@@ -401,9 +401,11 @@
 
         item.idAnchors.forEach(function(elem) {
           var id = elem.getAttribute('data-s2ch-id-ref');
-          cnt = that.idMap[item.id].length;
-          while(!(color = _.conf.color.id[cnt--])) ;
-          elem.style.color = color;
+          if (that.idMap[id]) {
+            cnt = that.idMap[id].length;
+            while(!(color = _.conf.color.id[cnt--])) ;
+            elem.style.color = color;
+          }
         });
       });
     }
