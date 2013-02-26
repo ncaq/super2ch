@@ -87,33 +87,144 @@
   }
 
 })(function(_) {
-  _.re = {
-    anchorPrefix:   '(?:' + ['&gt;', '\uff1e', '\u226b'].join('|') + '){1,2}[\s\u3000]*',
-    anchorSplitter: '[,\uff0c=\uff1d\s\u3000]{1,2}',
-    id:             '(?:[a-zA-Z\\d\\/\\.\\+]{8})(?:_[a-zA-Z\\d\\/\\.\\+]{8}){0,2}[a-zA-Z\\d]?'
-  };
 
-  _.re.anchorBase = 
-    '[\\d\uff10-\uff19]+' +
-    '(?:-(?:' + _.re.anchorPrefix + ')?[\\d\uff10-\uff19]+)?' +
-    '(?:' + _.re.anchorSplitter + '(?:' + _.re.anchorPrefix + ')?[\\d\uff10-\uff19]+' +
-    '(?:-(?:' + _.re.anchorPrefix + ')?[\\d\uff10-\uff19]+)?)*';
+  _.escapeHTML = (function() {
+    var re    = /[&<>"']/g,
+        table = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        };
 
-  _.re.nameAnchor = new RegExp('^(?:' + _.re.anchorPrefix + ')?' + _.re.anchorBase + '$');
+    return function(text) {
+      return text.replace(re, function(chr) {
+        return table[chr];
+      });
+    };
+  })();
 
-  _.re.bodyAnchor = new RegExp(_.re.anchorPrefix + _.re.anchorBase);
+  _.basepath = window.location.pathname.replace(/[^\/]+$/, '');
+  _.basepathHTML = _.escapeHTML(_.basepath);
 
-  _.re.headerID = [
-    new RegExp('(\\s)(ID:(' + _.re.id + ')|\\[ (' + _.re.id + ') \\])'),
-    '$1<span class="s2ch-id" data-s2ch-id="$3$4">$2</span>'
-  ];
+  _.re = (function() {
+    var toAscii = (function() {
+      var re    = /[\uff10-\uff19]/g,
+          table = {
+            '\uff10': 0,
+            '\uff11': 1,
+            '\uff12': 2,
+            '\uff13': 3,
+            '\uff14': 4,
+            '\uff15': 5,
+            '\uff16': 6,
+            '\uff17': 7,
+            '\uff18': 8,
+            '\uff19': 9
+          };
 
-  _.re.bodyID = [
-    new RegExp('(^|\\W)(ID:(' + _.re.id + '))(?![\\w\\/\\.+])', 'g'),
-    '$1<span class="s2ch-id" data-s2ch-id-ref="$3">$2</span>'
-  ];
+      return function(text) {
+        return text.replace(re, function(chr) {
+          return table[chr];
+        });
+      };
+    })();
 
-  _.re.delATagAnchor = [new RegExp('<[aA][^>]*>(' + _.re.bodyAnchor.source + ')<\\/[aA]>', 'g'), '$1'];
+    var composeAnchor = function(str) {
+      var html, targets = [];
+
+      html = str.replace(
+          /.*?(([\d\uff10-\uff19]+)(?:-([\d\uff10-\uff19]+))?)/g,
+        function(all, target, min, max) {
+          var style = '';
+
+          min = parseInt(toAscii(min));
+          max = max ? parseInt(toAscii(max)) : min;
+
+          if (max < min) {
+            var tmp = min;
+            min = max;
+            max = tmp;
+          }
+
+          if (max - min + 1 <= _.conf.maxAnchorExtent) {
+            for(var j = min; j <= max; ++j) {
+              targets.push(j);
+            }
+          } else {
+            style = '" style="color:' + _.conf.ignoredAnchorColor;
+          }
+
+          return '<a href="' + _.basepathHTML + toAscii(target) + style + '">' + all + '</a>';
+        }
+      );
+
+      targets.sort();
+      return '<span data-s2ch-num-ref="' + targets.reduce(function(a, b) {
+        if (a[a.length - 1] !== b) {
+          a.push(b);
+        }
+        return a;
+      }, []).join(',') + '">' + html + '</span>';
+    };
+
+    var anchorPrefix = '(?:' + ['&gt;', '\uff1e', '\u226b'].join('|') + '){1,2}[\s\u3000]*',
+        anchorSplitter = '[,\uff0c=\uff1d\s\u3000]{1,2}',
+        anchorBase =
+          '[\\d\uff10-\uff19]+' +
+          '(?:-(?:' + anchorPrefix + ')?[\\d\uff10-\uff19]+)?' +
+          '(?:' + anchorSplitter + '(?:' + anchorPrefix + ')?[\\d\uff10-\uff19]+' +
+          '(?:-(?:' + anchorPrefix + ')?[\\d\uff10-\uff19]+)?)*',
+        bodyAnchor = anchorPrefix + anchorBase;
+
+    var id = '(?:[a-zA-Z\\d\\/\\.\\+]{8})(?:_[a-zA-Z\\d\\/\\.\\+]{8}){0,2}[a-zA-Z\\d]?';
+
+    return {
+      nameAnchor: [
+        new RegExp('^(?:' + anchorPrefix + ')?' + anchorBase + '$'),
+        composeAnchor
+      ],
+
+      bodyAnchor: [
+        new RegExp(bodyAnchor),
+        composeAnchor
+      ],
+
+      delATagAnchor: [
+        new RegExp('<[aA][^>]*>(' + bodyAnchor + ')<\\/[aA]>', 'g'),
+        '$1'
+      ],
+
+      headerID: [
+        new RegExp('(\\s)(ID:(' + id + ')|\\[ (' + id + ') \\])'),
+        '$1<span class="s2ch-id" data-s2ch-id="$3$4">$2</span>'
+      ],
+
+      bodyID: [
+        new RegExp('(^|\\W)(ID:(' + id + '))(?![\\w\\/\\.+])', 'g'),
+        '$1<span class="s2ch-id" data-s2ch-id-ref="$3">$2</span>'
+      ]
+    };
+  })();
+
+  // color index
+  _.color = (function() {
+    var color = {};
+
+    ['num', 'id'].forEach(function(group) {
+      var table = _.conf.color[group];
+
+      color[group] = function(count) {
+        var c = count;
+        while(!(color = table[c--])) ;
+        table[count] = color;
+        return color;
+      };
+    });
+
+    return color;
+  })();
 
   _.Response = function(thread, number, numberAnchor, dt, dd) {
     this.thread = thread;
@@ -188,12 +299,9 @@
     }
   };
 
-  _.Thread = function(baseuri, dl) {
+  _.Thread = function(dl) {
     this.id = ++_.Thread.idSeed || (_.Thread.idSeed = 1);
     (_.Thread.idMap || (_.Thread.idMap = {}))[this.id] = this;
-
-    this.baseuri = baseuri;
-    this.baseuriEscaped = _.escapeHTML(baseuri);
 
     this.dl = dl;
     this.dl.classList.add('s2ch-thread');
@@ -224,44 +332,6 @@
       this.dl.innerHTML = html;
     },
 
-    parseAnchor: function(str) {
-      var that = this, html, targets = [];
-
-      html = str.replace(
-          /.*?(([\d\uff10-\uff19]+)(?:-([\d\uff10-\uff19]+))?)/g,
-        function(all, target, min, max) {
-          var style = '';
-
-          min = parseInt(_.toAscii(min));
-          max = max ? parseInt(_.toAscii(max)) : min;
-
-          if (max < min) {
-            var tmp = min;
-            min = max;
-            max = tmp;
-          }
-
-          if (max - min + 1 <= _.conf.maxAnchorExtent) {
-            for(var j = min; j <= max; ++j) {
-              targets.push(j);
-            }
-          } else {
-            style = '" style="color:' + _.conf.ignoredAnchorColor;
-          }
-
-          return '<a href="' + that.baseuriEscaped + _.toAscii(target) + style + '">' + all + '</a>';
-        }
-      );
-
-      targets.sort();
-      return '<span data-s2ch-num-ref="' + targets.reduce(function(a, b) {
-        if (a[a.length - 1] !== b) {
-          a.push(b);
-        }
-        return a;
-      }, []).join(',') + '">' + html + '</span>';
-    },
-
     modifyItemHeader: function(html) {
       var that = this;
 
@@ -271,7 +341,7 @@
       // 最初の数字アンカー化。先頭一致にしないのは、レス番に<a name="レス番">を仕込んでるところがあるから。
       html = html
         .replace(/(^|>)[\s\u3000]*(\d+)/, function(all, prefix, num) {
-          return prefix + '<a href="' + that.baseuriEscaped + num +
+          return prefix + '<a href="' + _.basepathHTML + num +
             '" data-s2ch-num="' + num + '">' + num + '</a>';
         })
         .replace(_.re.headerID[0], _.re.headerID[1]);
@@ -293,7 +363,7 @@
       html = html.replace(
           /(<b>[\s\u3000]*)([^<]*?)([\s\u3000]*<\/b>(?:.*<\/b>)?)( *\[(.*?)\])?/i,
         function(all, a, name, b, mc, m) {
-          name = name.replace(_.re.nameAnchor, that.parseAnchor);
+          name = name.replace(_.re.nameAnchor[0], _.re.nameAnchor[1]);
           return '<span class="s2ch-res-name">' + a + name + b + '</b></span>' +
             (mailfound ? '[' + mail + ']' : (mc ? '[' + m + ']' : '[]'));
         }
@@ -336,9 +406,8 @@
         }
 
         // アンカー
-        terms[i] = terms[i].replace(_.re.bodyAnchor, function(str) {
-          return that.parseAnchor(str);
-        });
+        terms[i] = terms[i].replace(_.re.bodyAnchor[0], _.re.bodyAnchor[1]);
+
         // ID:
         terms[i] = terms[i].replace(_.re.bodyID[0], _.re.bodyID[1]);
       }
@@ -387,24 +456,18 @@
       });
 
       this.items.forEach(function(item) {
-        var cnt, color;
+        var color;
 
-        cnt = item.reverseReferences.length;
-        while(!(color = _.conf.color.num[cnt--])) ;
-        item.numberAnchor.style.color = color;
+        item.numberAnchor.style.color = _.color.num(item.reverseReferences.length);
 
-        if (item.id && that.idMap[item.id] && item.idAnchor) {
-          cnt = that.idMap[item.id].length;
-          while(!(color = _.conf.color.id[cnt--])) ;
-          item.idAnchor.style.color = color;
+        if (item.id && item.idAnchor && that.idMap[item.id]) {
+          item.idAnchor.style.color = _.color.id(that.idMap[item.id].length);
         }
 
         item.idAnchors.forEach(function(elem) {
           var id = elem.getAttribute('data-s2ch-id-ref');
           if (that.idMap[id]) {
-            cnt = that.idMap[id].length;
-            while(!(color = _.conf.color.id[cnt--])) ;
-            elem.style.color = color;
+            elem.style.color = _.color.id(that.idMap[id].length);
           }
         });
       });
@@ -782,15 +845,13 @@
   _.run = function() {
     var time_s, time_e;
 
-    var baseuri = window.location.pathname.replace(/[^\/]+$/, '');
-
     window.console.log('super2ch: start');
 
     time_s = Date.now();
 
     _.threadList = [];
     Array.prototype.forEach.call(document.querySelectorAll('dl.thread'), function(dl) {
-      _.threadList.push(new _.Thread(baseuri, dl));
+      _.threadList.push(new _.Thread(dl));
     });
 
     if (_.threadList.length === 0) {
@@ -800,7 +861,7 @@
         return b[1] - a[1];
       })[0];
       if (dl) {
-        _.threadList.push(new _.Thread(baseuri, dl[0]));
+        _.threadList.push(new _.Thread(dl[0]));
       }
     }
 
@@ -818,45 +879,6 @@
     time_e = Date.now();
     window.console.log('super2ch: done ' + ((time_e - time_s) / 1000) + 's');
   };
-
-  _.toAscii = (function() {
-    var re    = /[\uff10-\uff19]/g,
-        table = {
-          '\uff10': 0,
-          '\uff11': 1,
-          '\uff12': 2,
-          '\uff13': 3,
-          '\uff14': 4,
-          '\uff15': 5,
-          '\uff16': 6,
-          '\uff17': 7,
-          '\uff18': 8,
-          '\uff19': 9
-        };
-
-    return function(text) {
-      return text.replace(re, function(chr) {
-        return table[chr];
-      });
-    };
-  })();
-
-  _.escapeHTML = (function() {
-    var re    = /[&<>"']/g,
-        table = {
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;'
-        };
-
-    return function(text) {
-      return text.replace(re, function(chr) {
-        return table[chr];
-      });
-    };
-  })();
 
   _.css = [
     'body.super2ch .s2ch-id{text-decoration:underline;cursor:pointer}',
