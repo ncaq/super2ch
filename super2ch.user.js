@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name        super2ch
-// @version     3.0
+// @version     3.1
 // @author      wowo
 // @license     The MIT License
 // @namespace   http://my.opera.com/crckyl/
