@@ -135,8 +135,8 @@
       var html, targets = [];
 
       html = str.replace(
-          /.*?(([\d\uff10-\uff19]+)(?:-([\d\uff10-\uff19]+))?)/g,
-        function(all, target, min, max) {
+        _.re.anchorExtractor,
+        function(all, min, max) {
           var style = '';
 
           min = parseInt(toAscii(min));
@@ -148,6 +148,11 @@
             max = tmp;
           }
 
+          var link = _.basepathHTML + min;
+          if (max > min) {
+            link += '-' + max;
+          }
+
           if (max - min + 1 <= _.conf.maxAnchorExtent) {
             for(var j = min; j <= max; ++j) {
               targets.push(j);
@@ -156,7 +161,7 @@
             style = '" style="color:' + _.conf.ignoredAnchorColor;
           }
 
-          return '<a href="' + _.basepathHTML + toAscii(target) + style + '">' + all + '</a>';
+          return '<a href="' + link + style + '">' + all + '</a>';
         }
       );
 
@@ -204,7 +209,12 @@
       bodyID: [
         new RegExp('(^|\\W)(ID:(' + id + '))(?![\\w\\/\\.+])', 'g'),
         '$1<span class="s2ch-id" data-s2ch-id-ref="$3">$2</span>'
-      ]
+      ],
+
+      anchorExtractor: new RegExp(
+        '.*?([\\d\uff10-\uff19]+)(?:-(?:' + anchorPrefix + ')?([\\d\uff10-\uff19]+))?',
+        'g'
+      )
     };
   })();
 
