@@ -293,6 +293,7 @@
 
     jump: function() {
       var that         = this,
+          document     = this.dt.ownerDocument,
           top          = this.dt.getBoundingClientRect().top,
           bottom       = this.dd.getBoundingClientRect().bottom,
           screenHeight = document.documentElement.clientHeight,
@@ -540,9 +541,12 @@
   ];
 
   _.Thread.onMouseOver = function(ev) {
-    var source = ev.target, root;
+    var window = ev.view,
+        document = window.document,
+        source = ev.target,
+        root;
 
-    while(source && source.hasAttribute) {
+    while(source && source.nodeType === window.Node.ELEMENT_NODE) {
       _.Thread.referenceFilter.forEach(function(filter) {
         if (root) {
           return;
@@ -619,34 +623,99 @@
     }
   };
 
+  _.Thread.onClickHandlers = [
+    {
+      attrs: ['data-s2ch-num-ref'],
+      handler: function(thread, ref) {
+        var num = parseInt(ref.split(',')[0]);
+        if (thread.numberMap[num]) {
+          thread.numberMap[num].jump();
+          return true;
+        }
+        return false;
+      }
+    },
+
+    {
+      attrs: ['data-s2ch-id', 'data-s2ch-id-ref'],
+      handler: function(thread, id) {
+        var items = thread.idMap[id];
+        if (!items || items.length < 1) {
+          return false;
+        }
+
+        var win = window.open(),
+            doc = win.document,
+            dl  = doc.createElement('dl');
+
+        items.forEach(function(item) {
+          dl.appendChild(item.dt.cloneNode(true));
+          dl.appendChild(item.dd.cloneNode(true));
+        });
+
+        doc.body.appendChild(dl);
+        doc.body.classList.add('super2ch');
+
+        var style = doc.createElement('style');
+        style.textContent = _.css;
+        doc.body.appendChild(style);
+
+        _.Thread.init(win);
+        _.Popup.init(win);
+        return false;
+      }
+    }
+  ];
+
   _.Thread.onClick = function(ev) {
     if (ev.button !== 0 || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.metaKey) {
       return;
     }
 
-    var elem = ev.target;
-    while(elem && elem.hasAttribute) {
-      if (elem.hasAttribute('data-s2ch-num-ref')) {
-        var thread = _.Thread.idMap[parseInt(elem.getAttribute('data-s2ch-thread-id'))],
-            num    = parseInt(elem.getAttribute('data-s2ch-num-ref').split(',')[0]);
-        if (thread && thread.numberMap[num]) {
-          ev.preventDefault();
-          thread.numberMap[num].jump();
+    var window = ev.view,
+        document = window.document,
+        elem = ev.target,
+        end = false;
+
+    while(!end && elem && elem.nodeType === window.Node.ELEMENT_NODE) {
+      var id;
+
+      _.Thread.onClickHandlers.forEach(function(entry) {
+        if (end) {
+          return;
         }
-        break;
-      }
+
+        var thread, value = entry.attrs.reduce(function(prev, curr) {
+          return prev || elem.getAttribute(curr);
+        }, null);
+
+        if (value) {
+          if (elem.hasAttribute('data-s2ch-thread-id')) {
+            thread = _.Thread.idMap[parseInt(elem.getAttribute('data-s2ch-thread-id'))];
+          } else {
+            return;
+          }
+
+          if (entry.handler(thread, value)) {
+            ev.preventDefault();
+          }
+          end = true;
+        }
+      });
+
       elem = elem.parentNode;
     }
   };
 
-  _.Thread.init = function() {
+  _.Thread.init = function(window) {
     window.addEventListener('mouseover', _.Thread.onMouseOver, false);
     window.addEventListener('click', _.Thread.onClick, false);
   };
 
   _.Popup = function(root, source) {
+    this.document = root.ownerDocument;
     this.source = source;
-    this.root = document.createElement('div');
+    this.root = this.document.createElement('div');
     this.root.className = 's2ch-popup';
     this.root.appendChild(root);
 
@@ -684,7 +753,7 @@
     show: function(pinTime) {
       var that = this;
 
-      document.body.appendChild(this.root);
+      this.document.body.appendChild(this.root);
       this.adjustLocation();
 
       if (pinTime === 0) {
@@ -702,7 +771,9 @@
     },
 
     adjustLocation: function() {
-      var screen       = document.compatMode === 'BackCompat' ? document.body : document.documentElement,
+      var screen       = (this.document.compatMode === 'BackCompat'
+                          ? this.document.body
+                          : this.document.documentElement),
           screenWidth  = screen.clientWidth,
           screenHeight = screen.clientHeight,
           sourceRect   = this.source.getBoundingClientRect(),
@@ -848,7 +919,7 @@
     _.Popup.lastMousePos = pos;
   };
 
-  _.Popup.init = function() {
+  _.Popup.init = function(window) {
     window.addEventListener('mousemove', _.Popup.onMouseMove, false);
   };
 
@@ -883,8 +954,8 @@
       document.body.appendChild(style);
     }
 
-    _.Thread.init();
-    _.Popup.init();
+    _.Thread.init(window);
+    _.Popup.init(window);
 
     time_e = Date.now();
     window.console.log('super2ch: done ' + ((time_e - time_s) / 1000) + 's');
