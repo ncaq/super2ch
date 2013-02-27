@@ -876,7 +876,10 @@
   };
 
   _.Popup.run = function(source, root, pinTime) {
-    var popup = _.Popup.leaf;
+    var document = source.ownerDocument,
+        window = document.defaultView,
+        popup = _.Popup.leaf;
+
     while(popup) {
       if (source === popup.source) {
         return null;
@@ -885,7 +888,7 @@
     }
 
     var popupRoot = source;
-    while((popupRoot = popupRoot.parentNode) && popupRoot.classList) {
+    while((popupRoot = popupRoot.parentNode) && popupRoot.nodeType === window.Node.ELEMENT_NODE) {
       if (popupRoot.classList.contains('s2ch-popup')) {
         break;
       }
