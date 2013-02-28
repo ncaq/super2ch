@@ -29,7 +29,7 @@
   var conf = {
     // maxAnchorExtent 以上の範囲アンカーは無視する
     // >>1-1000 のようなアンカーが被参照ポップアップに現れなくなる
-    maxAnchorExtent:    32,
+    maxAnchorExtent: 32,
     ignoredAnchorColor: '#666',
 
     color: {
@@ -51,12 +51,12 @@
       // ポップアップが固定されるまでの時間(ミリ秒)
       // ポップアップを表示してから pinTime 以内にカーソルがアンカーから離れるとポップアップを消す
       // 0 なら待たずに固定する
-      pinTime:     100,
+      pinTime: 100,
       // 一つのポップアップには maxResCount 個までしかレスを表示しない
       maxResCount: 20,
-      // 被参照レスツリーの最大深度
+      // レスツリーの最大深度
       // 0 ならツリー表示しない(旧バージョンと同等)
-      maxTreeDepth: 4
+      maxTreeDepth: 3
     },
 
     urls: [
@@ -310,22 +310,7 @@
     },
 
     jump: function() {
-      var that         = this,
-          screen       = document.compatMode === 'BackCompat' ? document.body : document.documentElement,
-          screenHeight = screen.clientHeight,
-          top          = this.dt.getBoundingClientRect().top,
-          bottom       = this.dd.getBoundingClientRect().bottom,
-          offset       = 0;
-
-      if (top < screenHeight * 0.2) {
-        offset = top - screenHeight * 0.2;
-      } else if (bottom > screenHeight * 0.8) {
-        offset = bottom - screenHeight * 0.8;
-      }
-
-      document.documentElement.scrollTop += offset;
-      document.body.scrollTop += offset;
-
+      _.lazyScroll([this.dt, this.dd]);
       _.Popup.closeAll();
     }
   };
@@ -514,62 +499,11 @@
           return null;
         }
 
-        var rootDL, dl, leaf,
-            count = _.conf.popup.maxResCount,
-            depth = _.conf.popup.maxTreeDepth;
-
-        if (depth > 0) {
-          leaf = [[item, null]];
-        } else {
-          leaf = item.reverseReferences.map(function(item) {
-            return [item, null];
-          });
-          depth = 1;
-        }
-
-        while(count > 0 && leaf.length > 0 && depth--) {
-          var omit = 0;
-
-          leaf = leaf.reduce(function(new_leaf, pair) {
-            if (count <= 0) {
-              ++omit;
-              return new_leaf;
-            }
-
-            var item       = pair[0],
-                parentElem = pair[1],
-                dd;
-
-            if (!dl || dl.parentNode !== parentElem) {
-              dl = document.createElement('dl');
-              if (parentElem) {
-                parentElem.appendChild(dl);
-              } else {
-                rootDL = dl;
-              }
-            }
-
-            dl.appendChild(item.dt.cloneNode(true));
-            dl.appendChild(dd = item.dd.cloneNode(true));
-
-            item.reverseReferences.forEach(function(item) {
-              new_leaf.push([item, dd]);
-            });
-
-            --count;
-            return new_leaf;
-          }, []);
-
-          if (omit > 0) {
-            var dt = document.createElement('dt');
-            dt.classList.add('s2ch-annotation');
-            dt.textContent = '... ' + omit + ' \u30ec\u30b9\u7701\u7565 ...';
-            dl.appendChild(dt);
-          }
-        }
-
         return {
-          elem:  rootDL,
+          items: item.reverseReferences,
+          tree: function(item) {
+            return item.reverseReferences;
+          },
           title: '\u62bd\u51fa \u88ab\u53c2\u7167\u30ec\u30b9: ' + num
         };
       }
@@ -636,33 +570,75 @@
             return;
           }
 
+          if (data.items.length <= 0) {
+            data.title = '\u5bfe\u8c61\u30ec\u30b9\u304c\u3042\u308a\u307e\u305b\u3093';
+          }
+
           if (!root) {
             root = document.createElement('div');
           }
 
-          if (data.items) {
-            if (data.items.length <= 0) {
-              data.title = '\u5bfe\u8c61\u30ec\u30b9\u304c\u3042\u308a\u307e\u305b\u3093';
-            }
+          if (data.items.length <= 0) {
+            return;
+          }
 
-            if (data.items.length > _.conf.popup.maxResCount) {
-              data.title = data.title ? data.title + ' ' : '';
-              data.title += ' (' + _.conf.popup.maxResCount + '/' + data.items.length + ')';
-              data.items = data.items.slice(0, _.conf.popup.maxResCount);
-            }
-
-            if (data.items.length > 0) {
-              var dl = document.createElement('dl');
-              dl.classList.add('s2ch-thread');
-              data.items.forEach(function(item) {
-                dl.appendChild(item.dt.cloneNode(true));
-                dl.appendChild(item.dd.cloneNode(true));
+          var count = _.conf.popup.maxResCount,
+              depth = _.conf.popup.maxTreeDepth,
+              leaf  = data.items.map(function(item) {
+                return [item, null];
               });
-              root.appendChild(dl);
-            }
 
-          } else if (data.elem) {
-            root.appendChild(data.elem);
+          var dl;
+          while(count > 0 && leaf.length > 0 && depth-- > 0) {
+            var omit = [];
+
+            leaf = leaf.reduce(function(new_leaf, pair) {
+              if (count <= 0) {
+                omit.push(pair[0]);
+                return new_leaf;
+              }
+
+              var item       = pair[0],
+                  parentElem = pair[1],
+                  dd;
+
+              if (!dl || (parentElem && dl.parentNode !== parentElem)) {
+                dl = document.createElement('dl');
+                if (parentElem) {
+                  parentElem.appendChild(dl);
+                } else {
+                  root.appendChild(dl);
+                }
+              }
+
+              dl.appendChild(item.dt.cloneNode(true));
+              dl.appendChild(dd = item.dd.cloneNode(true));
+
+              item.reverseReferences.forEach(function(item) {
+                new_leaf.push([item, dd]);
+              });
+
+              --count;
+              return new_leaf;
+            }, []);
+
+            if (omit.length > 0) {
+              var dt = document.createElement('dt');
+              dt.classList.add('s2ch-omit-link');
+              dt.textContent = '... ' + omit.length + ' \u30ec\u30b9\u7701\u7565 (\u30af\u30ea\u30c3\u30af\u3067\u5c55\u958b) ...';
+              dt.addEventListener('click', function(ev) {
+                var first;
+                dt.parentNode.removeChild(dt);
+                omit.forEach(function(item) {
+                  var dt, dd;
+                  dl.appendChild(dt = item.dt.cloneNode(true));
+                  dl.appendChild(dd = item.dd.cloneNode(true));
+                  first = [dt, dd];
+                });
+                _.lazyScroll(first);
+              }, false);
+              dl.appendChild(dt);
+            }
           }
 
           if (data.title) {
@@ -1013,8 +989,51 @@
     window.console.log('super2ch: done ' + ((time_e - time_s) / 1000) + 's');
   };
 
+  _.lazyScroll = function(elements) {
+    var screen, screenHeight, scroll, top, bottom, offset = 0;
+
+    for(var p = elements[0].parentNode; p && p.nodeType === window.Node.ELEMENT_NODE; p = p.parentNode) {
+      if (p.scrollHeight > p.offsetHeight) {
+        screen = scroll = p;
+        break;
+      }
+    }
+
+    if (!screen) {
+      screen = document.compatMode === 'BackCompat' ? document.body : document.documentElement;
+    }
+    screenHeight = screen.clientHeight;
+
+    elements.forEach(function(elem) {
+      var rect = elem.getBoundingClientRect();
+      if (typeof(top) === 'undefined' || rect.top < top) {
+        top = rect.top;
+      }
+      if (typeof(bottom) === 'undefined' || rect.bottom > bottom) {
+        bottom = rect.bottom;
+      }
+    });
+
+    if (top < screenHeight * 0.2) {
+      offset = top - screenHeight * 0.2;
+    } else if (bottom > screenHeight * 0.8) {
+      offset = bottom - screenHeight * 0.8;
+    }
+
+    if (offset) {
+      if (!scroll) {
+        document.body.scrollTop += offset;
+        scroll = document.documentElement;
+      }
+      scroll.scrollTop += offset;
+    }
+  };
+
   _.css = [
-    'body.super2ch .s2ch-id{text-decoration:underline;cursor:pointer}',
+    'body.super2ch .s2ch-id{',
+    '  text-decoration:underline;',
+    '  cursor:pointer;',
+    '}',
     'body.super2ch .s2ch-popup{',
     '   position:absolute;',
     '   border:outset 1px gray;',
@@ -1030,15 +1049,39 @@
     '   -webkit-box-sizing:border-box;',
     '   z-index:32767;',
     '}',
-    'body.super2ch .s2ch-popup-pinned{background-color:#ffffe0}',
-    'body.super2ch .s2ch-popup dl{margin:0px;padding:0px}',
-    'body.super2ch .s2ch-popup dl dd{margin:0px 0px 0px 2em}',
-    'body.super2ch .s2ch-popup dl dd dl{border-left:3px solid #ccc;padding-left:4px}',
-    'body.super2ch .s2ch-popup .s2ch-popup-title + *{margin-top:1em}',
-    'body.super2ch .s2ch-res-name{color:#804040}',
-    'body.super2ch .s2ch-res-name>b{color:green}',
-    'body.super2ch .s2ch-popup img{max-width:320px;max-height:240px}',
-    'body.super2ch .s2ch-annotation{color:#888}'
+    'body.super2ch .s2ch-popup-pinned{',
+    '  background-color:#ffffe0;',
+    '}',
+    'body.super2ch .s2ch-popup dl{',
+    '  margin:0px;',
+    '  padding:0px;',
+    '}',
+    'body.super2ch .s2ch-popup dl dd{',
+    '  margin:0px 0px 0px 2em;',
+    '}',
+    'body.super2ch .s2ch-popup dl dd dl{',
+    '  border-left:3px solid #ccc;',
+    '  padding-left:4px;',
+    '}',
+    'body.super2ch .s2ch-popup .s2ch-popup-title + *{',
+    '  margin-top:1em;',
+    '}',
+    'body.super2ch .s2ch-res-name{',
+    '  color:#804040;',
+    '}',
+    'body.super2ch .s2ch-res-name > b{',
+    '  color:green;',
+    '}',
+    'body.super2ch .s2ch-popup img{',
+    '  max-width:320px;',
+    '  max-height:240px;',
+    '}',
+    'body.super2ch .s2ch-omit-link{',
+    '  color:#888;',
+    '  text-decoration:underline;',
+    '  cursor:pointer;',
+    '  padding-bottom:0.2em',
+    '}'
   ].join('');
 
   _.run();
