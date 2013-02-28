@@ -7,6 +7,20 @@
 // @include     http://*
 // ==/UserScript==
 
+/* Change log
+ *
+ * 3.1 - 2013/xx/xx
+ *  * 被参照レスポップアップでレスをツリー状に展開するように変更。
+ *  * アンカーの処理を改善。
+ *   * >>1->>3 のようなアンカーを >>1,3 と同等に扱っていたバグを修正。
+ *   * >>1>>3 のように連続したアンカーが正しく処理されていなかったバグを修正。
+ *  * 本文中の ID アンカーの着色が正しく処理されていなかったバグを修正。
+ *   * 対象 ID による書き込みがスレッドに存在しない場合、例外で処理が止まっていた。
+ *
+ * 3.0 - 2013/02/20
+ *  * 初版。
+ */
+
 (function(super2ch) {
   if (window !== window.top) {
     return;
@@ -26,7 +40,8 @@
       },
 
       id: { // IDハイライト
-        0: '#000',
+        0: '#888',
+        1: '#000',
         2: '#00f',
         5: '#f00'
       }
@@ -38,7 +53,10 @@
       // 0 なら待たずに固定する
       pinTime:     100,
       // 一つのポップアップには maxResCount 個までしかレスを表示しない
-      maxResCount: 20
+      maxResCount: 20,
+      // 被参照レスツリーの最大深度
+      // 0 ならツリー表示しない(旧バージョンと同等)
+      maxTreeDepth: 4
     },
 
     urls: [
@@ -175,11 +193,11 @@
     };
 
     var anchorPrefix = '(?:' + ['&gt;', '\uff1e', '\u226b'].join('|') + '){1,2}[\s\u3000]*',
-        anchorSplitter = '[,\uff0c=\uff1d\s\u3000]{1,2}',
+        anchorSplitter = '(?:[,\uff0c=\uff1d\s\u3000]{1,2}(?:' + anchorPrefix + ')?|' + anchorPrefix + ')',
         anchorBase =
           '[\\d\uff10-\uff19]+' +
           '(?:-(?:' + anchorPrefix + ')?[\\d\uff10-\uff19]+)?' +
-          '(?:' + anchorSplitter + '(?:' + anchorPrefix + ')?[\\d\uff10-\uff19]+' +
+          '(?:' + anchorSplitter + '[\\d\uff10-\uff19]+' +
           '(?:-(?:' + anchorPrefix + ')?[\\d\uff10-\uff19]+)?)*',
         bodyAnchor = anchorPrefix + anchorBase;
 
@@ -294,9 +312,10 @@
     jump: function() {
       var that         = this,
           document     = this.dt.ownerDocument,
+          screen       = document.compatMode === 'BackCompat' ? document.body : document.documentElement,
+          screenHeight = screen.clientHeight,
           top          = this.dt.getBoundingClientRect().top,
           bottom       = this.dd.getBoundingClientRect().bottom,
-          screenHeight = document.documentElement.clientHeight,
           offset       = 0;
 
       if (top < screenHeight * 0.2) {
@@ -307,6 +326,8 @@
 
       document.documentElement.scrollTop += offset;
       document.body.scrollTop += offset;
+
+      _.Popup.closeAll();
     }
   };
 
@@ -477,9 +498,7 @@
 
         item.idAnchors.forEach(function(elem) {
           var id = elem.getAttribute('data-s2ch-id-ref');
-          if (that.idMap[id]) {
-            elem.style.color = _.color.id(that.idMap[id].length);
-          }
+          elem.style.color = _.color.id(that.idMap[id] ? that.idMap[id].length : 0);
         });
       });
     }
@@ -488,7 +507,7 @@
   _.Thread.referenceFilter = [
     {
       attrs: ['data-s2ch-num'],
-      handler: function(thread, num) {
+      handler: function(thread, num, attr, document) {
         num = parseInt(num);
 
         var item = thread.numberMap[num];
@@ -496,8 +515,62 @@
           return null;
         }
 
+        var rootDL, dl, leaf,
+            count = _.conf.popup.maxResCount,
+            depth = _.conf.popup.maxTreeDepth;
+
+        if (depth > 0) {
+          leaf = [[item, null]];
+        } else {
+          leaf = item.reverseReferences.map(function(item) {
+            return [item, null];
+          });
+          depth = 1;
+        }
+
+        while(count > 0 && leaf.length > 0 && depth--) {
+          var omit = 0;
+
+          leaf = leaf.reduce(function(new_leaf, pair) {
+            if (count <= 0) {
+              ++omit;
+              return new_leaf;
+            }
+
+            var item       = pair[0],
+                parentElem = pair[1],
+                dd;
+
+            if (!dl || dl.parentNode !== parentElem) {
+              dl = document.createElement('dl');
+              if (parentElem) {
+                parentElem.appendChild(dl);
+              } else {
+                rootDL = dl;
+              }
+            }
+
+            dl.appendChild(item.dt.cloneNode(true));
+            dl.appendChild(dd = item.dd.cloneNode(true));
+
+            item.reverseReferences.forEach(function(item) {
+              new_leaf.push([item, dd]);
+            });
+
+            --count;
+            return new_leaf;
+          }, []);
+
+          if (omit > 0) {
+            var dt = document.createElement('dt');
+            dt.classList.add('s2ch-annotation');
+            dt.textContent = '... ' + omit + ' \u30ec\u30b9\u7701\u7565 ...';
+            dl.appendChild(dt);
+          }
+        }
+
         return {
-          items: item.reverseReferences,
+          elem:  rootDL,
           title: '\u62bd\u51fa \u88ab\u53c2\u7167\u30ec\u30b9: ' + num
         };
       }
@@ -562,8 +635,16 @@
             return;
           }
 
-          var data = filter.handler(thread, source.getAttribute(attr), attr);
-          if (data && data.items) {
+          var data = filter.handler(thread, source.getAttribute(attr), attr, document);
+          if (!data) {
+            return;
+          }
+
+          if (!root) {
+            root = document.createElement('div');
+          }
+
+          if (data.items) {
             if (data.items.length <= 0) {
               data.title = '\u5bfe\u8c61\u30ec\u30b9\u304c\u3042\u308a\u307e\u305b\u3093';
             }
@@ -572,17 +653,6 @@
               data.title = data.title ? data.title + ' ' : '';
               data.title += ' (' + _.conf.popup.maxResCount + '/' + data.items.length + ')';
               data.items = data.items.slice(0, _.conf.popup.maxResCount);
-            }
-
-            if (!root) {
-              root = document.createElement('div');
-            }
-
-            if (data.title) {
-              var title = document.createElement('div');
-              title.className = 's2ch-popup-title';
-              title.textContent = data.title;
-              root.appendChild(title);
             }
 
             if (data.items.length > 0) {
@@ -594,6 +664,16 @@
               });
               root.appendChild(dl);
             }
+
+          } else if (data.elem) {
+            root.appendChild(data.elem);
+          }
+
+          if (data.title) {
+            var title = document.createElement('div');
+            title.className = 's2ch-popup-title';
+            title.textContent = data.title;
+            root.insertBefore(title, root.firstChild);
           }
         });
       });
@@ -847,6 +927,9 @@
       if (this === _.Popup.leaf) {
         _.Popup.leaf = this.parent;
       }
+      if (this === _.Popup.root) {
+        _.Popup.root = null;
+      }
       if (this.parent) {
         this.parent.removeChild(this);
       }
@@ -902,11 +985,20 @@
 
     popup = new _.Popup(root, source);
     popup.show(pinTime || _.conf.popup.pinTime);
+    if (!_.Popup.root) {
+      _.Popup.root = popup;
+    }
     if (_.Popup.leaf) {
       _.Popup.leaf.addChild(popup);
     }
     _.Popup.leaf = popup;
     return popup;
+  };
+
+  _.Popup.closeAll = function() {
+    if (_.Popup.root) {
+      _.Popup.root.close();
+    }
   };
 
   _.Popup.onMouseMove = function(ev) {
@@ -983,10 +1075,13 @@
     '}',
     'body.super2ch .s2ch-popup-pinned{background-color:#ffffe0}',
     'body.super2ch .s2ch-popup dl{margin:0px;padding:0px}',
+    'body.super2ch .s2ch-popup dl dd{margin:0px 0px 0px 2em}',
+    'body.super2ch .s2ch-popup dl dd dl{border-left:3px solid #ccc;padding-left:4px}',
     'body.super2ch .s2ch-popup .s2ch-popup-title + *{margin-top:1em}',
     'body.super2ch .s2ch-res-name{color:#804040}',
     'body.super2ch .s2ch-res-name>b{color:green}',
-    'body.super2ch .s2ch-popup img{max-width:320px;max-height:240px}'
+    'body.super2ch .s2ch-popup img{max-width:320px;max-height:240px}',
+    'body.super2ch .s2ch-annotation{color:#888}'
   ].join('');
 
   _.run();
