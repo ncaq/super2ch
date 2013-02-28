@@ -311,7 +311,6 @@
 
     jump: function() {
       var that         = this,
-          document     = this.dt.ownerDocument,
           screen       = document.compatMode === 'BackCompat' ? document.body : document.documentElement,
           screenHeight = screen.clientHeight,
           top          = this.dt.getBoundingClientRect().top,
@@ -507,7 +506,7 @@
   _.Thread.referenceFilter = [
     {
       attrs: ['data-s2ch-num'],
-      handler: function(thread, num, attr, document) {
+      handler: function(thread, num, attr) {
         num = parseInt(num);
 
         var item = thread.numberMap[num];
@@ -614,10 +613,7 @@
   ];
 
   _.Thread.onMouseOver = function(ev) {
-    var window = ev.view,
-        document = window.document,
-        source = ev.target,
-        root;
+    var source = ev.target, root;
 
     while(source && source.nodeType === window.Node.ELEMENT_NODE) {
       _.Thread.referenceFilter.forEach(function(filter) {
@@ -635,7 +631,7 @@
             return;
           }
 
-          var data = filter.handler(thread, source.getAttribute(attr), attr, document);
+          var data = filter.handler(thread, source.getAttribute(attr), attr);
           if (!data) {
             return;
           }
@@ -714,36 +710,6 @@
         }
         return false;
       }
-    },
-
-    {
-      attrs: ['data-s2ch-id', 'data-s2ch-id-ref'],
-      handler: function(thread, id) {
-        var items = thread.idMap[id];
-        if (!items || items.length < 1) {
-          return false;
-        }
-
-        var win = window.open(),
-            doc = win.document,
-            dl  = doc.createElement('dl');
-
-        items.forEach(function(item) {
-          dl.appendChild(item.dt.cloneNode(true));
-          dl.appendChild(item.dd.cloneNode(true));
-        });
-
-        doc.body.appendChild(dl);
-        doc.body.classList.add('super2ch');
-
-        var style = doc.createElement('style');
-        style.textContent = _.css;
-        doc.body.appendChild(style);
-
-        _.Thread.init(win);
-        _.Popup.init(win);
-        return false;
-      }
     }
   ];
 
@@ -752,10 +718,7 @@
       return;
     }
 
-    var window = ev.view,
-        document = window.document,
-        elem = ev.target,
-        end = false;
+    var elem = ev.target, end = false;
 
     while(!end && elem && elem.nodeType === window.Node.ELEMENT_NODE) {
       var id;
@@ -787,15 +750,14 @@
     }
   };
 
-  _.Thread.init = function(window) {
+  _.Thread.init = function() {
     window.addEventListener('mouseover', _.Thread.onMouseOver, false);
     window.addEventListener('click', _.Thread.onClick, false);
   };
 
   _.Popup = function(root, source) {
-    this.document = root.ownerDocument;
     this.source = source;
-    this.root = this.document.createElement('div');
+    this.root = document.createElement('div');
     this.root.className = 's2ch-popup';
     this.root.appendChild(root);
 
@@ -833,7 +795,7 @@
     show: function(pinTime) {
       var that = this;
 
-      this.document.body.appendChild(this.root);
+      document.body.appendChild(this.root);
       this.adjustLocation();
 
       if (pinTime === 0) {
@@ -851,9 +813,7 @@
     },
 
     adjustLocation: function() {
-      var screen       = (this.document.compatMode === 'BackCompat'
-                          ? this.document.body
-                          : this.document.documentElement),
+      var screen       = document.compatMode === 'BackCompat' ? document.body : document.documentElement,
           screenWidth  = screen.clientWidth,
           screenHeight = screen.clientHeight,
           sourceRect   = this.source.getBoundingClientRect(),
@@ -959,10 +919,7 @@
   };
 
   _.Popup.run = function(source, root, pinTime) {
-    var document = source.ownerDocument,
-        window = document.defaultView,
-        popup = _.Popup.leaf;
-
+    var popup = _.Popup.leaf;
     while(popup) {
       if (source === popup.source) {
         return null;
@@ -1014,7 +971,7 @@
     _.Popup.lastMousePos = pos;
   };
 
-  _.Popup.init = function(window) {
+  _.Popup.init = function() {
     window.addEventListener('mousemove', _.Popup.onMouseMove, false);
   };
 
@@ -1049,8 +1006,8 @@
       document.body.appendChild(style);
     }
 
-    _.Thread.init(window);
-    _.Popup.init(window);
+    _.Thread.init();
+    _.Popup.init();
 
     time_e = Date.now();
     window.console.log('super2ch: done ' + ((time_e - time_s) / 1000) + 's');
