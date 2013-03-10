@@ -98,8 +98,8 @@
     }
   }
 
-  if (run) {
-    super2ch({
+  if (run || (window.super2ch || {}).forceRun) {
+    super2ch(window.super2ch = {
       conf: conf
     });
   }
@@ -327,6 +327,85 @@
     this.resolveReferences();
   };
 
+  _.Thread.modifyItemHeader = function(html) {
+    // a,b以外のタグ削除
+    html = html.replace(/<(?!\/?(?:b|a)[ >])\/?[^>]*>/ig, '');
+
+    // 最初の数字アンカー化。先頭一致にしないのは、レス番に<a name="レス番">を仕込んでるところがあるから。
+    html = html
+      .replace(/(^|>)[\s\u3000]*(\d+)/, function(all, prefix, num) {
+        return prefix + '<a href="' + _.basepathHTML + num +
+          '" data-s2ch-num="' + num + '">' + num + '</a>';
+      })
+      .replace(_.re.headerID[0], _.re.headerID[1]);
+
+    // メール抽出 / メールアンカー削除
+    html = html.replace(/(<a[^>]+?href=([\"\']))[^\2]*\/mailto:/i, '$1mailto:');
+
+    var mail = '', mailfound = false;
+    html = html.replace(
+        /<a[^>]+?href=([\"\'])mailto:([^\1>]*)\1[^>]*>(.*?)<\/a>/i,
+      function(all, d, m, c) {
+        mailfound = true;
+        mail = m;
+        return c;
+      }
+    );
+
+    // 名前 / 最初の太字部分を抜いてるのはアンカー化用
+    html = html.replace(
+        /(<b>[\s\u3000]*)([^<]*?)([\s\u3000]*<\/b>(?:.*<\/b>)?)(?:[\s\u3000]*\[(.*?)\])?/i,
+      function(all, a, name, trip, m) {
+        name = name.replace(_.re.nameAnchor[0], _.re.nameAnchor[1]);
+        return '<span class="s2ch-res-name">' + a + name + trip + '</span>' +
+          ' [<span class="s2ch-res-mail">' + (mail || m || '') + '</span>]';
+      }
+    );
+
+    return html;
+  };
+
+  _.Thread.modifyItemBody = function(html) {
+    html = html
+      .replace(_.re.delATagAnchor[0], _.re.delATagAnchor[1])
+      .replace(
+          /<a(?=\s)[^>]*\shref=([\"\'])([^\1>]*)\1[^>]*>((?:ftp|sssp|h?t?tps?):\/\/([^<]*))<\/a>/ig,
+        function(all, _quot, href, text, url) {
+          // ime.nu とか外す
+          try {
+            href = decodeURIComponent(href);
+            url  = decodeURIComponent(url);
+          } catch(e) { }
+          return href.indexOf(url) < 0 ? all : text;
+        }
+      );
+
+    var terms = html.split(/(<[^>]*>)/);
+    for(var i = 0; i < terms.length; i += 2) {
+      if (i < 1 || !/<a\s/i.test(terms[i - 1])) {
+        // 自動リンク
+        terms[i] = terms[i].replace(
+            /(^|\W)(ftp|sssp|h?t?tps?)(:\/\/(?:[a-z\d\.\-+_:\/\?%#=~@;\(\)\$,!\']|&amp;)*)/ig,
+          function(_all, prefix, scheme, url) {
+            var scheme_link = scheme;
+            if (/^(?:sssp|h?t?tps?)$/i.test(scheme)) {
+              scheme_link = 'http';
+            }
+            return prefix + '<a href="' + scheme_link + url + '">' + scheme + url + '</a>';
+          }
+        );
+      }
+
+      // アンカー
+      terms[i] = terms[i].replace(_.re.bodyAnchor[0], _.re.bodyAnchor[1]);
+
+      // ID:
+      terms[i] = terms[i].replace(_.re.bodyID[0], _.re.bodyID[1]);
+    }
+
+    return terms.join('');
+  };
+
   _.Thread.prototype = {
     eachDtDd: function(cb) {
       Array.prototype.forEach.call(this.dl.getElementsByTagName('dt'), function(dt) {
@@ -341,94 +420,11 @@
     modifyHTML: function() {
       var that = this, html = '';
       this.eachDtDd(function(dt, dd) {
-        html += '<dt>' + that.modifyItemHeader(dt.innerHTML) + '</dt>' +
-          '<dd>' + that.modifyItemBody(dd.innerHTML) + '</dd>';
+        html += '<dt>' + _.Thread.modifyItemHeader(dt.innerHTML) + '</dt>' +
+          '<dd>' + _.Thread.modifyItemBody(dd.innerHTML) + '</dd>';
       });
       html = html.replace(/<script(?: [^>]*)?>[\s\S]*?<\/script>/ig, '');
       this.dl.innerHTML = html;
-    },
-
-    modifyItemHeader: function(html) {
-      var that = this;
-
-      // a,b以外のタグ削除
-      html = html.replace(/<(?!\/?(?:b|a)[ >])\/?[^>]*>/ig, '');
-
-      // 最初の数字アンカー化。先頭一致にしないのは、レス番に<a name="レス番">を仕込んでるところがあるから。
-      html = html
-        .replace(/(^|>)[\s\u3000]*(\d+)/, function(all, prefix, num) {
-          return prefix + '<a href="' + _.basepathHTML + num +
-            '" data-s2ch-num="' + num + '">' + num + '</a>';
-        })
-        .replace(_.re.headerID[0], _.re.headerID[1]);
-
-      // メール抽出 / メールアンカー削除
-      html = html.replace(/(<a[^>]+?href=([\"\']))[^\2]*\/mailto:/i, '$1mailto:');
-
-      var mail = '', mailfound = false;
-      html = html.replace(
-          /<a[^>]+?href=([\"\'])mailto:([^\1>]*)\1[^>]*>(.*?)<\/a>/i,
-        function(all, d, m, c) {
-          mailfound = true;
-          mail = m;
-          return c;
-        }
-      );
-
-      // 名前 / 最初の太字部分を抜いてるのはアンカー化用
-      html = html.replace(
-          /(<b>[\s\u3000]*)([^<]*?)([\s\u3000]*<\/b>(?:.*<\/b>)?)( *\[(.*?)\])?/i,
-        function(all, a, name, b, mc, m) {
-          name = name.replace(_.re.nameAnchor[0], _.re.nameAnchor[1]);
-          return '<span class="s2ch-res-name">' + a + name + b + '</b></span>' +
-            (mailfound ? '[' + mail + ']' : (mc ? '[' + m + ']' : '[]'));
-        }
-      );
-
-      return html;
-    },
-
-    modifyItemBody: function(html) {
-      var that = this;
-
-      html = html
-        .replace(_.re.delATagAnchor[0], _.re.delATagAnchor[1])
-        .replace(
-            /<a(?=\s)[^>]*\shref=([\"\'])([^\1>]*)\1[^>]*>((?:ftp|sssp|h?t?tps?):\/\/([^<]*))<\/a>/ig,
-          function(all, _quot, href, text, url) {
-            // ime.nu とか外す
-            try {
-              href = decodeURIComponent(href);
-              url  = decodeURIComponent(url);
-            } catch(e) { }
-            return href.indexOf(url) < 0 ? all : text;
-          }
-        );
-
-      var terms = html.split(/(<[^>]*>)/);
-      for(var i = 0; i < terms.length; i += 2) {
-        if (i < 1 || !/<a\s/i.test(terms[i - 1])) {
-          // 自動リンク
-          terms[i] = terms[i].replace(
-              /(^|\W)(ftp|sssp|h?t?tps?)(:\/\/(?:[a-z\d\.\-+_:\/\?%#=~@;\(\)\$,!\']|&amp;)*)/ig,
-            function(_all, prefix, scheme, url) {
-              var scheme_link = scheme;
-              if (/^(?:sssp|h?t?tps?)$/i.test(scheme)) {
-                scheme_link = 'http';
-              }
-              return prefix + '<a href="' + scheme_link + url + '">' + scheme + url + '</a>';
-            }
-          );
-        }
-
-        // アンカー
-        terms[i] = terms[i].replace(_.re.bodyAnchor[0], _.re.bodyAnchor[1]);
-
-        // ID:
-        terms[i] = terms[i].replace(_.re.bodyID[0], _.re.bodyID[1]);
-      }
-
-      return terms.join('');
     },
 
     setupItems: function() {
