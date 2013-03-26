@@ -1,12 +1,10 @@
 (function(phantom, g, w) {
 
-  w.super2ch = {
-    forceRun: true
-  };
-
   phantom.injectJs('../../super2ch.user.js');
 
   var _ = w.super2ch;
+
+  _.run();
 
   _.test = {
     id: 0,

@@ -88,20 +88,25 @@
     ]
   };
 
-  var run = false;
+  window.super2ch = {
+    conf: conf,
+    run: function() {
+      super2ch(window.super2ch);
+      window.super2ch.run = function() { };
+    }
+  };
+
+  var autoRun = false;
   for(var i = 0; i < conf.urls.length; ++i) {
     if (conf.urls[i].url.test(window.location.href)) {
-      run = conf.urls[i].run;
-      if (!run) {
+      autoRun = conf.urls[i].run;
+      if (!autoRun) {
         break;
       }
     }
   }
-
-  if (run || (window.super2ch || {}).forceRun) {
-    super2ch(window.super2ch = {
-      conf: conf
-    });
+  if (autoRun) {
+    window.super2ch.run();
   }
 
 })(function(_) {
