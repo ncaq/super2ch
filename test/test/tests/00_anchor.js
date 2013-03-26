@@ -4,6 +4,9 @@
     ['1',
      '<a href="1" data-s2ch-num="1">1</a>'],
 
+    ['<a name="1">1',
+     '<a name="1"><a href="1" data-s2ch-num="1">1</a>'],
+
     ['<a href="mailto:sage"><b>hoge</b></a>',
      '<span class="s2ch-res-name"><b>hoge</b></span> [<span class="s2ch-res-mail">sage</span>]'],
 
